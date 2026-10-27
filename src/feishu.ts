@@ -2,7 +2,7 @@ import type { IData, IDataCondition } from '@lark-base-open/js-sdk';
 import { hydrateConfig, type Config, type Datum, type Table } from './model';
 import { unpivotFieldCounts } from './field-data';
 import { initializeDashboard } from './dashboard-session';
-import { parseSdkNumber } from './sdk-number';
+import { decodeDashboardMatrix } from './dashboard-data';
 type SDK = typeof import('@lark-base-open/js-sdk');
 let sdk: SDK;
 export const isFeishu = window.parent !== window || new URLSearchParams(location.search).get('mode') === 'feishu';
@@ -31,17 +31,11 @@ export function conditions(config: Config): IDataCondition[] {
 }
 export function decodeData(data: IData, config: Config): Datum[] {
   if (config.axisMode === 'fields') return unpivotFieldCounts(data, config.sources[0]?.axisFields ?? []);
-  const dimensions = config.grouped ? 2 : 1;
-  return data.map(row => {
-    if (row.length !== dimensions + 1) throw new Error('飞书返回的数据列数与配置不一致，请重新选择字段并保存');
-    const rawMeasure = row[dimensions].value;
-    const measure = rawMeasure === null ? 0 : parseSdkNumber(rawMeasure);
-    if (measure === undefined) {
-      throw new Error('飞书返回了非数值统计结果，请检查数值字段');
-    }
-    const label = (i: number) => String(row[i].text ?? row[i].value ?? '未填写');
-    return { category: label(0), series: config.grouped ? label(1) : '全部记录', value: measure };
-  });
+  const source = config.sources[0];
+  const groups = [source.category, ...(config.grouped ? [source.series] : [])].map(id => ({ id, name: id }));
+  return decodeDashboardMatrix(data, groups, config.aggregate === 'count').map(row => ({
+    category: row.groups[0], series: config.grouped ? row.groups[1] : '全部记录', value: row.value,
+  }));
 }
 export async function loadLiveData(config: Config, viewing: boolean): Promise<Datum[]> {
   const raw = viewing ? await sdk.bitable.dashboard.getData() : await sdk.bitable.dashboard.getPreviewData(conditions(config));

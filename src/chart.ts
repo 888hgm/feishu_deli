@@ -21,11 +21,12 @@ export function createChart(element: HTMLElement) {
       const colors = palettes[config.palette].colors;
       const narrow = element.clientWidth < 480;
       const crowded = !config.transpose && (element.clientWidth - 100) / Math.max(matrix.categories.length, 1) < 60;
+      const categoryWidth = Math.max(90, Math.min(260, (element.clientWidth - 120) / Math.max(matrix.categories.length, 1) - 20));
       const ink = getComputedStyle(document.documentElement).getPropertyValue('--ink').trim() || '#1f2329';
       const text = (n: number) => n.toLocaleString('zh-CN', { maximumFractionDigits: config.decimals });
       const categoryAxis = { type: 'category' as const, data: matrix.categories,
         axisTick: { show: false }, axisLine: { show: config.axes, lineStyle: { color: '#dee3eb' } },
-        axisLabel: { show: config.axes, color: ink, margin: 16, interval: 0, width: crowded ? 65 : 90, rotate: crowded ? 35 : 0, overflow: 'truncate' as const } };
+        axisLabel: { show: config.axes, color: ink, margin: 16, interval: 0, width: crowded ? 65 : categoryWidth, rotate: crowded ? 35 : 0, overflow: 'truncate' as const } };
       const valueAxis = { type: 'value' as const, max: percent ? 100 : undefined,
         axisLine: { show: false }, axisTick: { show: false },
         axisLabel: { show: config.axes, color: ink, formatter: (v: number) => text(v) + (percent ? '%' : '') },
@@ -34,7 +35,7 @@ export function createChart(element: HTMLElement) {
         animationDuration: 350, color: colors, textStyle: { fontFamily: 'Inter, Microsoft YaHei, sans-serif' },
         aria: { enabled: true, description: `${config.title}，${matrix.categories.length} 个类别，${matrix.series.length} 个系列` },
         grid: { left: config.axes ? (narrow ? 48 : 68) : 28, right: narrow ? 18 : 30, top: config.legend ? 66 : 32, bottom: matrix.categories.length > 12 ? 85 : crowded ? 70 : 45, outerBoundsMode: 'same', outerBoundsContain: 'axisLabel' },
-        legend: { show: config.legend, top: 4, right: 24, icon: 'roundRect', itemWidth: 10, itemHeight: 10, itemGap: 22, textStyle: { color: ink, fontSize: 12 } },
+        legend: { show: config.legend, top: 4, left: 20, icon: 'circle', itemWidth: 10, itemHeight: 10, itemGap: 22, textStyle: { color: ink, fontSize: 12 } },
         tooltip: { trigger: 'axis', renderMode: 'richText', axisPointer: { type: 'shadow' },
           valueFormatter: (value: unknown) => typeof value === 'number' ? text(value) + (percent ? '%' : '') : String(value) },
         xAxis: config.transpose ? valueAxis : categoryAxis,
@@ -48,9 +49,10 @@ export function createChart(element: HTMLElement) {
               [{ offset: 0, color: colors[s % colors.length] }, { offset: 1, color: colors[s % colors.length] + '80' }]) : colors[s % colors.length] },
           label: { show: config.labels, position: config.chartType === 'grouped' ? (config.transpose ? 'right' : 'top') : 'inside',
             color: config.chartType === 'grouped' ? ink : '#fff', fontWeight: 500,
-            formatter: (params: { value: unknown }) => {
-              const n = Number(params.value);
-              return n === 0 ? (config.empty === 'zero' ? '0' : config.empty === 'dash' ? '—' : '') : text(n) + (percent ? '%' : '');
+            formatter: (params: { value: unknown; dataIndex: number }) => {
+              const showPercent = percent && config.labelContent === 'percent';
+              const n = showPercent ? Number(params.value) : matrix.values[s][params.dataIndex];
+              return n === 0 ? (config.empty === 'zero' ? '0' : config.empty === 'dash' ? '—' : '') : text(n) + (showPercent ? '%' : '');
             } },
           data: values[s],
         })),

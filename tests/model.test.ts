@@ -54,9 +54,9 @@ test('字段删除和重复数据源会阻止保存', () => {
 test('多个字段展开为独立柱，每个字段按自身选项计数而非组合分类', () => {
   const fields = [{ id: 'a', name: '策划' }, { id: 'b', name: '设计' }];
   const data = unpivotFieldCounts([
-    [{ value: 'done', text: '完成' }, { value: 'doing', text: '进行中' }, { value: 3, text: '3' }],
-    [{ value: 'done', text: '完成' }, { value: 'done', text: '完成' }, { value: 2, text: '2' }],
-    [{ value: 'doing', text: '进行中' }, { value: 'done', text: '完成' }, { value: 5, text: '5' }],
+    [{ value: '策划', text: '策划' }, { value: 'done', text: '完成' }, { value: 'doing', text: '进行中' }],
+    [{ value: 'done', text: '完成' }, { value: 2, text: '2' }, { value: 3, text: '3' }],
+    [{ value: 'doing', text: '进行中' }, { value: 5, text: '5' }, { value: null, text: null }],
   ], fields);
   const config = defaultConfig(); config.sources[0].axisFields = fields;
   const matrix = matrixFromData(data, config);
@@ -68,7 +68,10 @@ test('多个字段展开为独立柱，每个字段按自身选项计数而非�
 test('字段顺序遵循用户选择，空字段值计入未填写，空表仍保留横轴字段', () => {
   const config = defaultConfig();
   config.sources[0].axisFields = [{ id: 'b', name: '设计' }, { id: 'a', name: '策划' }];
-  const data = unpivotFieldCounts([[{ value: null, text: null }, { value: '', text: '' }, { value: 4, text: '4' }]], config.sources[0].axisFields);
+  const data = unpivotFieldCounts([
+    [{ value: '设计', text: '设计' }, { value: null, text: null }],
+    [{ value: null, text: null }, { value: 4, text: '4' }],
+  ], config.sources[0].axisFields);
   assert.ok(data.every(d => d.series === '未填写'));
   assert.deepEqual(matrixFromData(data, config).categories, ['设计', '策划']);
   assert.deepEqual(matrixFromData([], config).categories, ['设计', '策划']);
@@ -103,5 +106,8 @@ test('示例图四个字段各统计 258 次，百分比分别归一到 100%', (
 test('无效 SDK 列数或统计值会明确报错', () => {
   const fields = [{ id: 'a', name: '策划' }];
   assert.throws(() => unpivotFieldCounts([[{ value: 1, text: '1' }]], fields), /列数/);
-  assert.throws(() => unpivotFieldCounts([[{ value: '完成', text: '完成' }, { value: -1, text: '-1' }]], fields), /无效/);
+  assert.throws(() => unpivotFieldCounts([
+    [{ value: '策划', text: '策划' }, { value: '记录总数', text: '记录总数' }],
+    [{ value: '完成', text: '完成' }, { value: -1, text: '-1' }],
+  ], fields), /无效/);
 });

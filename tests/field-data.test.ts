@@ -7,10 +7,9 @@ import { defaultConfig, matrixFromData, percentMatrix } from '../src/model.ts';
 test('文本状态按字段分别堆积，兼容 SDK 返回字符串记录数', () => {
   const fields = [{ id: 'industrial', name: '工业设计' }, { id: 'product', name: '产品设计' }];
   const data = unpivotFieldCounts([
-    [{ value: '完成', text: '完成' }, { value: '完成', text: '完成' }, { value: '12', text: '12' }],
-    [{ value: '完成', text: '完成' }, { value: '未完成', text: '未完成' }, { value: '8', text: '8' }],
-    [{ value: '未完成', text: '未完成' }, { value: '完成', text: '完成' }, { value: 5, text: '5' }],
-    [{ value: '未完成', text: '未完成' }, { value: '未完成', text: '未完成' }, { value: ' 5 ', text: '5' }],
+    [{ value: '工业设计', text: '工业设计' }, { value: '完成', text: '完成' }, { value: '未完成', text: '未完成' }],
+    [{ value: '完成', text: '完成' }, { value: '12', text: '12' }, { value: '8', text: '8' }],
+    [{ value: '未完成', text: '未完成' }, { value: 5, text: '5' }, { value: ' 5 ', text: '5' }],
   ], fields);
   const config = defaultConfig();
   config.chartType = 'stacked';
@@ -27,6 +26,7 @@ test('文本状态按字段分别堆积，兼容 SDK 返回字符串记录数', 
 
 test('字符串零记录数保留为零，不把完成或未完成的文本当成度量', () => {
   const result = unpivotFieldCounts([
+    [{ value: '设计状态', text: '设计状态' }, { value: '记录总数', text: '记录总数' }],
     [{ value: '完成', text: null }, { value: '0', text: '0' }],
     [{ value: '未完成', text: null }, { value: '6.0', text: '6' }],
   ], [{ id: 'status', name: '设计状态' }]);
@@ -37,8 +37,11 @@ test('字符串零记录数保留为零，不把完成或未完成的文本当�
 });
 
 test('缺失或非法记录数继续报错，避免将错误数据悄悄画成零', () => {
-  for (const value of [null, '', ' ', '完成', '12件', '1,234', true, {}, -1, 'NaN', 'Infinity', '0x10', 1.5]) {
-    const input = [[{ value: '完成', text: '完成' }, { value, text: '123' }]] as unknown as IData;
+  for (const value of ['', ' ', '完成', '12件', '1,234', true, {}, -1, 'NaN', 'Infinity', '0x10', 1.5]) {
+    const input = [
+      [{ value: '设计状态', text: '设计状态' }, { value: '记录总数', text: '记录总数' }],
+      [{ value: '完成', text: '完成' }, { value, text: '123' }],
+    ] as unknown as IData;
     assert.throws(() => unpivotFieldCounts(input, [{ id: 'status', name: '设计状态' }]), /无效的字段记录数/);
   }
 });

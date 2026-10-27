@@ -14,6 +14,7 @@ export interface Config {
   gradient: boolean;
   legend: boolean;
   labels: boolean;
+  labelContent: 'value' | 'percent';
   axes: boolean;
   grid: boolean;
   aggregate: 'count' | 'sum' | 'avg' | 'max' | 'min';
@@ -43,8 +44,8 @@ export const defaultConfig = (): Config => ({
     { id: 'status', name: '项目策划' }, { id: 'design', name: '设计评审' },
     { id: 'development', name: '开发实施' }, { id: 'testing', name: '测试验收' },
   ] }],
-  chartType: 'stacked', palette: 'default', gradient: false, legend: true,
-  labels: true, axes: true, grid: true, aggregate: 'count', grouped: true,
+  chartType: 'percent', palette: 'default', gradient: false, legend: true,
+  labels: true, labelContent: 'value', axes: true, grid: true, aggregate: 'count', grouped: true,
   categorySort: 'original', categoryOrder: 'value', seriesSort: 'asc', transpose: false,
   empty: 'blank', filter: '', decimals: 0, barWidth: 54, rounded: false, subtitle: '',
 });
@@ -117,6 +118,7 @@ export function hydrateConfig(value: unknown): Config {
     axisFields: Array.isArray(s.axisFields) ? s.axisFields.filter(f => f && typeof f.id === 'string').map(f => ({ id: f.id, name: String(f.name ?? f.id) })) : [],
   })) : defaultConfig().sources;
   if (!palettes[config.palette]) config.palette = 'default';
+  config.labelContent = raw.labelContent === 'percent' ? 'percent' : 'value';
   if (config.axisMode === 'fields') { config.aggregate = 'count'; config.grouped = true; }
   config.decimals = Math.max(0, Math.min(2, Number(config.decimals) || 0));
   config.barWidth = Math.max(16, Math.min(96, Number(config.barWidth) || 54));
