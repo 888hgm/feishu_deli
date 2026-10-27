@@ -43,7 +43,7 @@ export const defaultConfig = (): Config => ({
     { id: 'status', name: '项目策划' }, { id: 'design', name: '设计评审' },
     { id: 'development', name: '开发实施' }, { id: 'testing', name: '测试验收' },
   ] }],
-  chartType: 'percent', palette: 'default', gradient: false, legend: true,
+  chartType: 'stacked', palette: 'default', gradient: false, legend: true,
   labels: true, axes: true, grid: true, aggregate: 'count', grouped: true,
   categorySort: 'original', categoryOrder: 'value', seriesSort: 'asc', transpose: false,
   empty: 'blank', filter: '', decimals: 0, barWidth: 54, rounded: false, subtitle: '',
