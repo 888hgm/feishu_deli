@@ -1,5 +1,6 @@
 import './style.css';
-import { defaultConfig, hydrateConfig, palettes, validateConfig, type Config, type Datum, type Source, type Table } from './model';
+import './filters.css';
+import { defaultConfig, hydrateConfig, palettes, validateConfig, type Config, type Datum, type Source, type Table, type RowFilter } from './model';
 import { demoData, demoTables } from './demo';
 import { createChart } from './chart';
 import * as live from './feishu';
@@ -14,6 +15,8 @@ let creating = false;
 let dataError = '';
 let closed = false;
 let filterOpen = false;
+let draftFilters: RowFilter[] = [];
+let draftFilterLogic: 'all' | 'any' = 'all';
 let sequence = 0;
 let refreshTimer: ReturnType<typeof setTimeout>;
 let toastTimer: ReturnType<typeof setTimeout>;
@@ -28,13 +31,15 @@ const icons = {
   settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3" fill="white"/><circle cx="15" cy="17" r="3" fill="white"/></svg>',
 };
 root.innerHTML = `
-  <header class="app-header"><div class="brand-icon">${icons.bars}</div><div class="brand"><strong>柱状图组件</strong><span>飞书多维表格 / 自定义仪表盘 · v0.1.5</span></div><span id="mode-badge" class="badge">${live.isFeishu ? '连接飞书中' : '示例数据'}</span><div class="header-actions"><button id="save-top" class="button primary" data-action="save" hidden>添加到仪表盘</button><button class="button" data-action="export">${icons.arrow}导出图片</button><button class="button" data-action="toggle-panel">${icons.settings}<span id="toggle-label">配置</span></button></div></header>
+  <header class="app-header"><div class="brand-icon">${icons.bars}</div><div class="brand"><strong>柱状图组件</strong><span>飞书多维表格 / 自定义仪表盘 · v0.1.6</span></div><span id="mode-badge" class="badge">${live.isFeishu ? '连接飞书中' : '示例数据'}</span><div class="header-actions"><button id="save-top" class="button primary" data-action="save" hidden>添加到仪表盘</button><button class="button" data-action="export">${icons.arrow}导出图片</button><button class="button" data-action="toggle-panel">${icons.settings}<span id="toggle-label">配置</span></button></div></header>
   <div class="workspace"><main class="preview"><div class="preview-heading"><div><div class="eyebrow">图表预览</div><h1>让数据，一目了然。</h1></div><span class="live-indicator"><i></i><span id="data-status">实时预览</span></span></div>
     <section class="chart-card"><div class="card-heading"><div><h2 id="chart-title"></h2><p id="chart-subtitle"></p></div><span class="chart-kind" id="chart-kind"></span></div><div class="chart-wrap"><div id="chart" role="img" aria-label="柱状图预览"></div><div id="chart-message" role="status" hidden></div></div><div class="card-footer"><span id="source-note"></span><span id="record-note"></span></div></section>
     <section class="insights" aria-label="图表统计"><div><span id="stat-category-label">分类数量</span><strong id="stat-categories">—</strong><small id="stat-category-note">按所选横轴字段汇总</small></div><div><span>分组数量</span><strong id="stat-series">—</strong><small>当前图表中的数据系列</small></div><div><span id="stat-total-label">记录总数</span><strong id="stat-total">—</strong><small id="stat-total-note">统计范围内的记录</small></div></section>
     <p class="preview-note" id="preview-note">当前使用示例数据，调整右侧选项即可查看效果。</p>
   </main><aside class="sidebar" aria-label="柱状图配置"><div class="sidebar-header"><strong>柱状图</strong><button class="icon-button" data-action="toggle-panel" aria-label="收起配置">×</button></div><nav class="tabs" aria-label="配置选项卡"><button data-action="tab" data-value="basic" role="tab">基础配置</button><button data-action="tab" data-value="custom" role="tab">自定义配置</button><button data-action="tab" data-value="analysis" role="tab">分析</button></nav><div id="panel" class="panel"></div><footer class="sidebar-footer"><span id="save-state">尚未保存</span><button id="save" class="button primary" data-action="save">保存配置</button></footer></aside></div><div id="toast" class="toast" role="status" hidden></div>`;
 const chart = createChart(document.querySelector<HTMLElement>('#chart')!);
+root.insertAdjacentHTML('beforeend', '<div id="filter-editor" hidden></div>');
+root.querySelector('.header-actions')?.insertAdjacentHTML('afterbegin', '<button class="button" data-action="refresh">刷新数据</button>');
 const query = <T extends HTMLElement = HTMLElement>(selector: string) => document.querySelector<T>(selector)!;
 function check(key: keyof Config, label: string): string {
   return `<label class="check"><input type="checkbox" data-key="${key}" ${config[key] ? 'checked' : ''}><span>${label}</span></label>`;
@@ -69,8 +74,8 @@ function renderPanel(): void {
     <div class="section"><label class="field"><span>标题</span><input data-key="title" value="${escape(config.title)}" maxlength="100" placeholder="请输入图表标题"></label>${check('showTitle', '显示标题')}</div>
     <div class="section">${select('axisMode', '横轴模式', [['fields', '多个字段各自作为一根柱'], ['values', '单个字段的值作为分类']], config.axisMode)}${select('tableId', '数据源', tableOptions, source?.tableId, 'data-source="0"')}${check('multi', '多数据源模式')}
       ${config.multi ? `<div class="additional-sources">${config.sources.slice(1).map((s, i) => `<div class="source-block"><div class="source-block-heading">数据源 ${i + 2}<button class="text-button" data-action="remove-source" data-index="${i + 1}">移除</button></div>${select('tableId', '', tableOptions, s.tableId, `data-source="${i + 1}"`)}${sourceFields(s, i + 1)}</div>`).join('')}<button class="add-source" data-action="add-source">＋ 添加数据源</button><p class="help">分别映射字段后合并同名类别；支持计数与求和。</p></div>` : ''}
-      <label class="field range-field"><span>数据范围</span><div class="range-box"><span>▤ 全部数据</span><button class="text-button" data-action="filter">筛选${config.filter ? ' (1)' : ''}</button></div></label>
-      ${filterOpen || config.filter ? `<label class="field filter-field"><span>仅显示分类名称包含</span><input data-key="filter" value="${escape(config.filter)}" placeholder="输入关键词，清空则显示全部"><small>对汇总后的分类筛选，不改变原始记录。</small></label>` : ''}</div>
+      <div class="field range-field"><span>数据范围</span><div class="range-box"><span>▤ 全部数据</span><button class="text-button" data-action="filter">筛选${config.axisMode === 'fields' ? (config.rowFilters.length ? ` (${config.rowFilters.length})` : '') : config.filter ? ' (1)' : ''}</button></div></div>
+      ${config.axisMode === 'fields' ? '<p class="help scope-help">先筛选可读的全表记录，再逐字段计数；不随仪表盘外层全局筛选变化。</p>' : filterOpen || config.filter ? `<label class="field filter-field"><span>仅显示分类名称包含</span><input data-key="filter" value="${escape(config.filter)}" placeholder="输入关键词，清空则显示全部"><small>对汇总后的分类筛选，不改变原始记录。</small></label>` : ''}</div>
     <div class="section">${select('chartType', '图表类型', [['percent', '百分比堆积柱状图'], ['stacked', '堆积柱状图'], ['grouped', '分组柱状图']], config.chartType)}
       <div class="field"><span>主题色</span><div class="palette-field"><span class="swatches">${palettes[config.palette].colors.map(c => `<i style="background:${c}"></i>`).join('')}</span><select data-key="palette" aria-label="主题色">${Object.entries(palettes).map(([key, p]) => `<option value="${key}" ${key === config.palette ? 'selected' : ''}>${p.name}</option>`).join('')}</select></div></div>
       ${check('gradient', '渐变填充')}<div class="field options-label"><span>图表选项</span></div><div class="check-grid">${check('legend', '图例')}${check('labels', '数据标签')}${check('axes', '坐标轴')}${check('grid', '网格线')}</div>${config.chartType === 'percent' && config.labels ? `<div style="margin-top:16px">${select('labelContent', '柱内标签显示', [['value', '实际数量'], ['percent', '百分比']], config.labelContent)}<p class="help">柱高按比例显示，标签可选择实际数量。</p></div>` : ''}</div>
@@ -82,7 +87,19 @@ function renderPanel(): void {
     <div class="section"><div class="panel-intro"><span class="intro-icon">Aa</span><strong>调整图表细节</strong><p>让同一份数据，更适合你的展示场景。</p></div><label class="field"><span>副标题</span><input data-key="subtitle" value="${escape(config.subtitle)}" placeholder="添加说明或统计口径" maxlength="200"></label>${select('decimals', '数值小数位', [['0', '不保留小数'], ['1', '保留 1 位'], ['2', '保留 2 位']], String(config.decimals))}</div>
     <div class="section"><label class="field"><span>柱体最大宽度 <b id="width-value">${config.barWidth}px</b></span><input type="range" min="16" max="96" step="2" data-key="barWidth" value="${config.barWidth}"></label>${check('rounded', '柱体圆角')}</div><div class="section"><button class="button full-width" data-action="reset">恢复默认配置</button><p class="help">恢复后点击“保存配置”才会覆盖已保存设置。</p></div>`;
   else renderAnalysis();
+  renderFilterEditor();
   updateSaveState();
+}
+const filterOperators: [RowFilter['operator'], string][] = [['eq', '等于'], ['neq', '不等于'], ['contains', '包含'], ['notContains', '不包含'], ['empty', '为空'], ['notEmpty', '不为空']];
+function renderFilterEditor(): void {
+  const surface = query('#filter-editor');
+  surface.hidden = !filterOpen || config.axisMode !== 'fields';
+  if (surface.hidden) return;
+  const fields = tables.find(table => table.id === config.sources[0]?.tableId)?.fields ?? [];
+  surface.innerHTML = `<button class="filter-backdrop" data-action="filter-cancel" aria-label="关闭筛选"></button><div class="filter-popover" role="dialog" aria-label="设置筛选条件"><div class="filter-heading"><strong>设置筛选条件</strong><button class="icon-button" data-action="filter-cancel" aria-label="关闭筛选面板">×</button></div>
+    <div class="filter-logic">满足<select data-filter-logic aria-label="筛选条件关系"><option value="all" ${draftFilterLogic === 'all' ? 'selected' : ''}>全部条件</option><option value="any" ${draftFilterLogic === 'any' ? 'selected' : ''}>任一条件</option></select>的记录参与统计</div>
+    <div class="filter-rows">${draftFilters.map((rule, index) => `<div class="filter-row"><select aria-label="筛选字段 ${index + 1}" data-filter-field="${index}"><option value="">请选择字段</option>${fields.map(field => `<option value="${escape(field.id)}" ${field.id === rule.fieldId ? 'selected' : ''}>${escape(field.name)}</option>`).join('')}</select><select aria-label="筛选运算符 ${index + 1}" data-filter-operator="${index}">${filterOperators.map(([operator, label]) => `<option value="${operator}" ${operator === rule.operator ? 'selected' : ''}>${label}</option>`).join('')}</select>${['empty', 'notEmpty'].includes(rule.operator) ? '<div class="filter-value-empty">无需填写值</div>' : `<input aria-label="筛选值 ${index + 1}" data-filter-value="${index}" value="${escape(rule.value)}" placeholder="输入筛选值">`}<button class="filter-remove" data-action="filter-remove" data-index="${index}" aria-label="删除筛选条件 ${index + 1}">×</button></div>`).join('') || '<p class="filter-empty">尚未设置条件，当前统计全部可读记录。</p>'}</div>
+    <button class="text-button filter-add" data-action="filter-add">＋ 添加条件</button><div class="filter-actions"><button class="text-button" data-action="filter-clear">清空条件</button><span></span><button class="button" data-action="filter-cancel">取消</button><button class="button primary" data-action="filter-apply">应用筛选</button></div></div>`;
 }
 function renderAnalysis(): void {
   const rows = data.filter(d => !config.filter || d.category.includes(config.filter));
@@ -126,7 +143,7 @@ function draw(): void {
   if (dataError) {
     const selecting = dataError === '请至少选择一个横轴字段';
     chartMessage(selecting ? '请在右侧勾选横轴字段，每个字段会显示一根堆积柱。' : dataError, !selecting);
-  } else chartMessage(matrix.categories.length ? '' : '暂无符合条件的数据');
+  } else chartMessage(data.length ? '' : '暂无符合条件的数据');
   if (activeTab === 'analysis') renderAnalysis();
 }
 function report(error: unknown): void {
@@ -149,7 +166,7 @@ async function refresh(): Promise<void> {
     if (request !== sequence) return;
     data = result; draw(); query('#data-status').textContent = '实时预览';
     if (live.isFeishu && viewing) await live.rendered();
-  } catch (error) { if (request === sequence) report(error); }
+    } catch (error) { if (request === sequence) { data = []; try { draw(); } catch {} report(error); } }
 }
 function changed(fetch = true): void {
   updateSaveState();
@@ -167,6 +184,7 @@ function newSource(tableId: string): Source {
 }
 root.addEventListener('input', event => {
   const target = event.target as HTMLInputElement;
+  if (target.dataset.filterValue !== undefined) { draftFilters[Number(target.dataset.filterValue)].value = target.value; return; }
   if (!target.dataset.key || target.tagName !== 'INPUT' || target.type === 'checkbox') return;
   const key = target.dataset.key as 'title' | 'subtitle' | 'filter' | 'decimals' | 'barWidth';
   if (key === 'barWidth' || key === 'decimals') config[key] = Number(target.value);
@@ -174,8 +192,16 @@ root.addEventListener('input', event => {
   if (key === 'barWidth') query('#width-value').textContent = `${target.value}px`;
   changed(false);
 });
+document.addEventListener('keydown', event => { if (event.key === 'Escape' && filterOpen) { filterOpen = false; renderFilterEditor(); } });
 root.addEventListener('change', event => {
   const target = event.target as HTMLInputElement | HTMLSelectElement;
+  if (target.dataset.filterLogic !== undefined) { draftFilterLogic = target.value === 'any' ? 'any' : 'all'; return; }
+  if (target.dataset.filterField !== undefined) {
+    const rule = draftFilters[Number(target.dataset.filterField)];
+    const field = tables.find(table => table.id === config.sources[0]?.tableId)?.fields.find(item => item.id === target.value);
+    rule.fieldId = field?.id ?? ''; rule.fieldName = field?.name ?? ''; renderFilterEditor(); return;
+  }
+  if (target.dataset.filterOperator !== undefined) { draftFilters[Number(target.dataset.filterOperator)].operator = target.value as RowFilter['operator']; renderFilterEditor(); return; }
   if (target instanceof HTMLInputElement && target.dataset.axisField) {
     const source = config.sources[Number(target.dataset.source)];
     const field = tables.find(t => t.id === source.tableId)?.fields.find(f => f.id === target.dataset.axisField);
@@ -188,14 +214,14 @@ root.addEventListener('change', event => {
   const key = target.dataset.key;
   if (target.dataset.source !== undefined) {
     const index = Number(target.dataset.source);
-    if (key === 'tableId') config.sources[index] = newSource(target.value);
+    if (key === 'tableId') { config.sources[index] = newSource(target.value); if (index === 0) { config.rowFilters = []; filterOpen = false; } }
     else config.sources[index][key as 'category' | 'metric' | 'series'] = target.value;
   } else if (target instanceof HTMLInputElement && target.type === 'checkbox') {
     (config as unknown as Record<string, unknown>)[key] = target.checked;
     if (key === 'multi' && config.multi && !['count', 'sum'].includes(config.aggregate)) config.aggregate = 'count';
   } else if (target.tagName === 'SELECT') {
     (config as unknown as Record<string, unknown>)[key] = key === 'decimals' ? Number(target.value) : target.value;
-    if (key === 'axisMode' && config.axisMode === 'fields') { config.aggregate = 'count'; config.grouped = true; config.categorySort = 'original'; }
+    if (key === 'axisMode' && config.axisMode === 'fields') { config.aggregate = 'count'; config.grouped = true; config.categorySort = 'original'; config.filter = ''; }
   } else return;
   renderPanel(); changed();
 });
@@ -203,6 +229,18 @@ root.addEventListener('click', async event => {
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>('button[data-action]');
   if (!button) return;
   const action = button.dataset.action;
+  if (action === 'filter-cancel') { filterOpen = false; renderFilterEditor(); return; }
+  if (action === 'filter-add') { draftFilters.push({ fieldId: '', fieldName: '', operator: 'eq', value: '' }); renderFilterEditor(); return; }
+  if (action === 'filter-remove') { draftFilters.splice(Number(button.dataset.index), 1); renderFilterEditor(); return; }
+  if (action === 'filter-clear') { draftFilters = []; renderFilterEditor(); return; }
+  if (action === 'filter-apply') {
+    if (draftFilters.some(rule => !rule.fieldId)) { toast('请先选择每条条件的筛选字段'); return; }
+    const next = { ...config, rowFilters: structuredClone(draftFilters), filterLogic: draftFilterLogic };
+    const fields = tables.find(table => table.id === next.sources[0]?.tableId)?.fields ?? [];
+    if (draftFilters.some(rule => !fields.some(field => field.id === rule.fieldId))) { toast('筛选字段不可用，请重新选择'); return; }
+    config = next; filterOpen = false; renderPanel(); changed(); return;
+  }
+  if (action === 'refresh') { void refresh(); return; }
   if (action === 'tab') { activeTab = button.dataset.value!; renderPanel(); return; }
   if (action === 'choose-fields') {
     activeTab = 'basic'; renderPanel();
@@ -210,7 +248,7 @@ root.addEventListener('click', async event => {
     return;
   }
   if (action === 'toggle-panel') { closed = !closed; root.classList.toggle('panel-closed', closed); return; }
-  if (action === 'filter') { filterOpen = !filterOpen; renderPanel(); return; }
+  if (action === 'filter') { filterOpen = !filterOpen; draftFilters = structuredClone(config.rowFilters); draftFilterLogic = config.filterLogic; renderPanel(); return; }
   if (action === 'add-source') {
     const next = tables.find(t => !config.sources.some(s => s.tableId === t.id));
     if (!next) { toast('所有可用数据表均已添加'); return; }
@@ -245,6 +283,7 @@ root.addEventListener('click', async event => {
       }
       return;
     }
+    if (dataError) { toast('请先修正数据读取错误，再保存配置'); return; }
     busy = true; updateSaveState();
     const snapshot = structuredClone(config);
     try {

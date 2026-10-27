@@ -3,8 +3,35 @@ import { hydrateConfig, type Config, type Datum, type Table } from './model';
 import { unpivotFieldCounts } from './field-data';
 import { initializeDashboard } from './dashboard-session';
 import { decodeDashboardMatrix } from './dashboard-data';
+import { dashboardAnchorFields } from './field-plan';
+import { loadRecordCounts } from './record-counts';
 type SDK = typeof import('@lark-base-open/js-sdk');
 let sdk: SDK;
+let recordSignal: AbortController | undefined;
+let notifyDataChange = () => {};
+let pendingRefresh: ReturnType<typeof setTimeout>;
+let recordStops: (() => void)[] = [];
+let watchKey = '';
+let watchSequence = 0;
+let recordsActive = false;
+const tableCache = new Map<string, ReturnType<SDK['bitable']['base']['getTableById']>>();
+function recordTable(id: string) {
+  let table = tableCache.get(id);
+  if (!table) { table = sdk.bitable.base.getTableById(id).catch(error => { tableCache.delete(id); throw error; }); tableCache.set(id, table); }
+  return table;
+}
+function queueDataChange() { clearTimeout(pendingRefresh); pendingRefresh = setTimeout(() => notifyDataChange(), 200); }
+async function watchRecords(ids: string[]): Promise<void> {
+  const key = JSON.stringify(ids);
+  if (key === watchKey) return;
+  watchKey = key; const request = ++watchSequence;
+  const tables = await Promise.all(ids.map(recordTable));
+  if (request !== watchSequence) return;
+  recordStops.forEach(stop => stop()); recordStops = [];
+  for (const table of tables) for (const method of ['onRecordAdd', 'onRecordDelete', 'onRecordModify', 'onFieldDelete', 'onFieldModify'] as const) {
+    try { recordStops.push(table[method](queueDataChange)); } catch { /* 仍可通过手动刷新和周期刷新重新统计。 */ }
+  }
+}
 export const isFeishu = window.parent !== window || new URLSearchParams(location.search).get('mode') === 'feishu';
 export async function connect(): Promise<{ tables: Table[]; config: Config; viewing: boolean; creating: boolean }> {
   sdk = await import('@lark-base-open/js-sdk');
@@ -15,7 +42,7 @@ export function conditions(config: Config): IDataCondition[] {
   if (config.axisMode === 'fields') return (config.multi ? config.sources : config.sources.slice(0, 1)).map(source => ({
     tableId: source.tableId,
     dataRange: { type: SourceType.ALL },
-    groups: (source.axisFields ?? []).map(field => ({ fieldId: field.id, mode: GroupMode.INTEGRATED,
+    groups: dashboardAnchorFields(source).map(field => ({ fieldId: field.id, mode: GroupMode.INTEGRATED,
       sort: { sortType: DATA_SOURCE_SORT_TYPE.VIEW } })),
     series: 'COUNTA',
   }));
@@ -38,6 +65,14 @@ export function decodeData(data: IData, config: Config): Datum[] {
   }));
 }
 export async function loadLiveData(config: Config, viewing: boolean): Promise<Datum[]> {
+  recordSignal?.abort(); recordSignal = new AbortController();
+  recordsActive = config.axisMode === 'fields';
+  if (config.axisMode === 'fields') {
+    const ids = (config.multi ? config.sources : config.sources.slice(0, 1)).map(source => source.tableId);
+    void watchRecords(ids).catch(() => { watchKey = ''; });
+    return loadRecordCounts({ getTableById: recordTable }, config, recordSignal.signal);
+  }
+  if (watchKey) { ++watchSequence; watchKey = ''; recordStops.forEach(stop => stop()); recordStops = []; }
   const raw = viewing ? await sdk.bitable.dashboard.getData() : await sdk.bitable.dashboard.getPreviewData(conditions(config));
   return decodeData(raw, config);
 }
@@ -46,11 +81,13 @@ export async function saveLive(config: Config): Promise<void> {
   if (!success) throw new Error('飞书未确认保存成功，请稍后重试');
 }
 export function subscribe(onData: () => void, onConfig: (config: Config) => void): () => void {
+  notifyDataChange = onData;
   const dashboard = sdk.bitable.dashboard;
-  const stops = [dashboard.onDataChange(onData), dashboard.onConfigChange(event => {
+  const stops = [dashboard.onDataChange(queueDataChange), dashboard.onConfigChange(event => {
     onConfig(hydrateConfig(event.data.customConfig?.chartConfig));
   })];
-  return () => stops.forEach(stop => stop());
+  const periodic = setInterval(() => { if (recordsActive && document.visibilityState !== 'hidden') queueDataChange(); }, 30000);
+  return () => { stops.forEach(stop => stop()); recordStops.forEach(stop => stop()); clearInterval(periodic); clearTimeout(pendingRefresh); recordSignal?.abort(); };
 }
 export async function syncTheme(render: () => void): Promise<() => void> {
   const apply = (theme: Awaited<ReturnType<typeof sdk.bitable.dashboard.getTheme>>) => {

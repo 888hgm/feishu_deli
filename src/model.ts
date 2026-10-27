@@ -2,6 +2,8 @@ export interface Field { id: string; name: string; numeric: boolean }
 export interface Table { id: string; name: string; fields: Field[] }
 export interface AxisField { id: string; name: string }
 export interface Source { tableId: string; category: string; series: string; metric: string; axisFields?: AxisField[] }
+export type FilterOperator = 'eq' | 'neq' | 'contains' | 'notContains' | 'empty' | 'notEmpty';
+export interface RowFilter { fieldId: string; fieldName: string; operator: FilterOperator; value: string }
 export interface Config {
   version: 1;
   title: string;
@@ -25,6 +27,8 @@ export interface Config {
   transpose: boolean;
   empty: 'blank' | 'zero' | 'dash';
   filter: string;
+  rowFilters: RowFilter[];
+  filterLogic: 'all' | 'any';
   decimals: number;
   barWidth: number;
   rounded: boolean;
@@ -47,7 +51,7 @@ export const defaultConfig = (): Config => ({
   chartType: 'percent', palette: 'default', gradient: false, legend: true,
   labels: true, labelContent: 'value', axes: true, grid: true, aggregate: 'count', grouped: true,
   categorySort: 'original', categoryOrder: 'value', seriesSort: 'asc', transpose: false,
-  empty: 'blank', filter: '', decimals: 0, barWidth: 54, rounded: false, subtitle: '',
+  empty: 'blank', filter: '', rowFilters: [], filterLogic: 'all', decimals: 0, barWidth: 54, rounded: false, subtitle: '',
 });
 export function matrixFromData(data: Datum[], config: Config): Matrix {
   const filtered = data.filter(d => !config.filter || d.category.includes(config.filter));
@@ -86,6 +90,13 @@ export function percentMatrix(matrix: Matrix): number[][] {
 export function validateConfig(config: Config, tables: Table[]): string | null {
   const sources = config.multi ? config.sources : config.sources.slice(0, 1);
   if (!sources.length) return '请先选择数据源';
+  if (config.axisMode === 'fields') {
+    const firstTable = tables.find(table => table.id === sources[0].tableId);
+    for (const filter of config.rowFilters) {
+      if (!firstTable?.fields.some(field => field.id === filter.fieldId)) return '筛选字段不可用，请重新设置筛选条件';
+      if (sources.some(source => !tables.find(table => table.id === source.tableId)?.fields.some(field => field.name === filter.fieldName))) return '多数据源需要包含同名的筛选字段';
+    }
+  }
   if (new Set(sources.map(s => s.tableId)).size !== sources.length) return '请勿重复添加同一张数据表';
   if (sources.length > 1 && config.aggregate !== 'count' && config.aggregate !== 'sum') return '多数据源合并暂支持计数和求和';
   if (config.axisMode === 'fields' && sources.some(s => JSON.stringify(s.axisFields?.map(f => f.name)) !== JSON.stringify(sources[0].axisFields?.map(f => f.name)))) return '多数据源需要选择名称和顺序一致的横轴字段';
@@ -119,7 +130,9 @@ export function hydrateConfig(value: unknown): Config {
   })) : defaultConfig().sources;
   if (!palettes[config.palette]) config.palette = 'default';
   config.labelContent = raw.labelContent === 'percent' ? 'percent' : 'value';
-  if (config.axisMode === 'fields') { config.aggregate = 'count'; config.grouped = true; }
+  config.rowFilters = Array.isArray(raw.rowFilters) ? raw.rowFilters.filter(rule => rule && typeof rule.fieldId === 'string' && typeof rule.fieldName === 'string' && ['eq', 'neq', 'contains', 'notContains', 'empty', 'notEmpty'].includes(rule.operator)).map(rule => ({ fieldId: rule.fieldId, fieldName: rule.fieldName, operator: rule.operator, value: String(rule.value ?? '') })) : [];
+  config.filterLogic = raw.filterLogic === 'any' ? 'any' : 'all';
+  if (config.axisMode === 'fields') { config.aggregate = 'count'; config.grouped = true; config.filter = ''; }
   config.decimals = Math.max(0, Math.min(2, Number(config.decimals) || 0));
   config.barWidth = Math.max(16, Math.min(96, Number(config.barWidth) || 54));
   return config;

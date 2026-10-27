@@ -1,4 +1,5 @@
 import type { Config, Datum, Table } from './model';
+import { matchesFilter } from './record-counts.ts';
 export const demoTables: Table[] = [
   { id: 'demo-company', name: '个人型中性笔公司', fields: [
     { id: 'company', name: '产品公司', numeric: false },
@@ -33,7 +34,7 @@ const rows: Row[][] = [0, 1].map(table => companies.flatMap((company, c) => stat
   })))));
 export function demoData(config: Config): Datum[] {
   return (config.multi ? config.sources : config.sources.slice(0, 1)).flatMap(source => {
-    const data = rows[source.tableId === 'demo-team' ? 1 : 0];
+    const data = rows[source.tableId === 'demo-team' ? 1 : 0].filter(row => config.axisMode !== 'fields' || !config.rowFilters.length || (config.filterLogic === 'any' ? config.rowFilters.some(rule => matchesFilter(row[rule.fieldId as keyof Row], rule)) : config.rowFilters.every(rule => matchesFilter(row[rule.fieldId as keyof Row], rule))));
     if (config.axisMode === 'fields') {
       return (source.axisFields ?? []).flatMap(field => {
         const counts = new Map<string, number>();
