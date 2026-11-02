@@ -34,6 +34,10 @@ export function createDetailsDialog(parent: HTMLElement, openRecord?: (tableId: 
     query('#details-column-button').textContent = `显示字段 (${visible.length}/${result.columns.length})`;
     query('#details-column-button').setAttribute('aria-expanded', String(columnsOpen));
     query('#details-column-picker').hidden = !columnsOpen;
+    if (columnsOpen) {
+      const anchor = query('#details-column-button').getBoundingClientRect();
+      dialog.style.setProperty('--details-picker-top', `${Math.ceil(anchor.bottom - dialog.getBoundingClientRect().top + 8)}px`);
+    }
     const matches = result.columns.map((name, index) => ({ name, index })).filter(({ name }) => name.toLocaleLowerCase().includes(fieldSearch.trim().toLocaleLowerCase()));
     query('#details-column-list').innerHTML = matches.map(({ name, index }) => `<label class="check"><input type="checkbox" data-detail-column="${index}" ${visible.includes(name) ? 'checked' : ''}><span>${escape(name)}</span></label>`).join('') || '<p class="help">未找到该字段</p>';
   }
@@ -53,7 +57,8 @@ export function createDetailsDialog(parent: HTMLElement, openRecord?: (tableId: 
     query('#details-paging').innerHTML = `<span>${filtered.length ? first + 1 : 0}–${Math.min(first + PAGE_SIZE, filtered.length)} 条</span><button class="button" data-detail-action="prev" ${page === 0 ? 'disabled' : ''} aria-label="上一页">上一页</button><span>${page + 1} / ${pages}</span><button class="button" data-detail-action="next" ${page + 1 === pages ? 'disabled' : ''} aria-label="下一页">下一页</button>`;
     if (!visible.length) { query('#details-grid').innerHTML = `<p class="details-empty">${keyword.trim() ? '没有匹配搜索词的记录' : '暂无符合条件的记录'}</p>`; return; }
     const multi = new Set(result.rows.map(row => row.tableId)).size > 1;
-    query('#details-grid').innerHTML = `${columns.length ? '' : '<p class="details-hidden-note">全部数据字段已隐藏，请点“显示字段”恢复。</p>'}<table class="details-table"><thead><tr><th scope="col" class="details-number">序号</th>${openRecord ? '<th scope="col" class="details-open-col">记录</th>' : ''}${multi ? '<th scope="col">来源数据表</th>' : ''}${columns.map(name => `<th scope="col" title="${escape(name)}">${escape(name)}</th>`).join('')}</tr></thead><tbody>${visible.map((row, index) => `<tr><td class="details-number">${first + index + 1}</td>${openRecord ? `<td class="details-open-col"><button class="text-button" data-detail-action="record" data-index="${first + index}" aria-label="打开第 ${first + index + 1} 条记录" ${columns.length ? '' : 'disabled'}>打开记录 ↗</button></td>` : ''}${multi ? `<td title="${escape(row.tableName)}">${escape(row.tableName)}</td>` : ''}${columns.map(name => `<td title="${escape(row.cells[name] ?? '')}">${escape(row.cells[name] ?? '')}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+    const widths = [54, ...(openRecord ? [104] : []), ...(multi ? [180] : []), ...columns.map(() => 180)];
+    query('#details-grid').innerHTML = `${columns.length ? '' : '<p class="details-hidden-note">全部数据字段已隐藏，请点“显示字段”恢复。</p>'}<table class="details-table" style="width:${widths.reduce((sum, width) => sum + width, 0)}px"><colgroup>${widths.map(width => `<col style="width:${width}px">`).join('')}</colgroup><thead><tr><th scope="col" class="details-number">序号</th>${openRecord ? '<th scope="col" class="details-open-col">记录</th>' : ''}${multi ? '<th scope="col">来源数据表</th>' : ''}${columns.map(name => `<th scope="col" title="${escape(name)}">${escape(name)}</th>`).join('')}</tr></thead><tbody>${visible.map((row, index) => `<tr><td class="details-number">${first + index + 1}</td>${openRecord ? `<td class="details-open-col"><button class="text-button" data-detail-action="record" data-index="${first + index}" aria-label="打开第 ${first + index + 1} 条记录" ${columns.length ? '' : 'disabled'}>打开记录 ↗</button></td>` : ''}${multi ? `<td title="${escape(row.tableName)}">${escape(row.tableName)}</td>` : ''}${columns.map(name => `<td title="${escape(row.cells[name] ?? '')}">${escape(row.cells[name] ?? '')}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
   }
   async function load(reset = true) {
     if (!current) return;

@@ -101,6 +101,11 @@ export async function syncTheme(render: () => void): Promise<() => void> {
   const apply = (theme: Awaited<ReturnType<typeof sdk.bitable.dashboard.getTheme>>) => {
     document.documentElement.style.setProperty('--paper', theme.chartBgColor);
     document.documentElement.style.setProperty('--ink', theme.labelColorTokenList[0] ?? '#1f2329');
+    // 图表背景允许透明；浮层、表头和固定列必须使用不透明底色。
+    const dark = theme.theme === 'DARK';
+    document.documentElement.style.setProperty('--details-surface', dark ? '#1f2329' : '#ffffff');
+    document.documentElement.style.setProperty('--details-hover', dark ? '#2b3445' : '#f4f7ff');
+    document.documentElement.style.setProperty('--details-line', dark ? '#3a3f48' : '#e8ebf0');
     render();
   };
   apply(await sdk.bitable.dashboard.getTheme());
