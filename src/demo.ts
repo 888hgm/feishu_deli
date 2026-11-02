@@ -69,6 +69,8 @@ export function demoDetails(config: Config, segment: Segment, signal: AbortSigna
     return {
       async getName() { return meta.name; },
       async getFieldMetaList() { return meta.fields; },
+      async getViewMetaList() { return [{ id: 'demo-view', name: '项目台账' }]; },
+      async getViewById(viewId: string) { return { id: viewId, async getFieldMetaList() { return meta.fields; } }; },
       async getRecordsByPage() { return { hasMore: false, records: rows[id === 'demo-team' ? 1 : 0].map((fields, index) => ({ recordId: `demo-${index}`, fields: { ...fields } })) }; },
     };
   } }, config, segment, signal);

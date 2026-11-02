@@ -84,8 +84,8 @@ export async function saveLive(config: Config): Promise<void> {
 export function loadDetails(config: Config, segment: Segment, signal: AbortSignal) {
   return loadRecordDetails({ getTableById: recordTable }, config, segment, signal);
 }
-export async function openRecord(tableId: string, recordId: string): Promise<void> {
-  const success = await sdk.bitable.ui.showRecordDetailDialog({ tableId, recordId });
+export async function openRecord(tableId: string, recordId: string, fieldIdList?: string[]): Promise<void> {
+  const success = await sdk.bitable.ui.showRecordDetailDialog({ tableId, recordId, ...(fieldIdList ? { fieldIdList } : {}) });
   if (!success) throw new Error('飞书未打开记录详情，请确认有源表读取权限，或在源表中查看该记录');
 }
 export function subscribe(onData: () => void, onConfig: (config: Config) => void): () => void {

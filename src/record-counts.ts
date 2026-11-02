@@ -2,8 +2,12 @@ import type { Config, Datum, RowFilter, Source } from './model.ts';
 
 export interface RecordItem { recordId: string; fields: Record<string, unknown> }
 interface RecordPage { records: RecordItem[]; hasMore: boolean; pageToken?: number }
+export interface RecordView { id: string; getFieldMetaList(): Promise<{ id: string; name: string }[]> }
 export interface RecordTable {
   getName?(): Promise<string>;
+  getViewMetaList?(): Promise<{ id: string; name: string }[]>;
+  getViewById?(id: string): Promise<RecordView>;
+  getActiveView?(): Promise<RecordView>;
   getFieldMetaList(): Promise<{ id: string; name: string }[]>;
   getRecordsByPage(params: { pageSize: number; pageToken?: number; stringValue: boolean }): Promise<RecordPage>;
 }

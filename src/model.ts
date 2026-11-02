@@ -29,6 +29,8 @@ export interface Config {
   filter: string;
   rowFilters: RowFilter[];
   filterLogic: 'all' | 'any';
+  detailHiddenFields: string[];
+  detailViews: { tableId: string; viewId: string }[];
   decimals: number;
   barWidth: number;
   rounded: boolean;
@@ -51,7 +53,7 @@ export const defaultConfig = (): Config => ({
   chartType: 'percent', palette: 'default', gradient: false, legend: true,
   labels: true, labelContent: 'value', axes: true, grid: true, aggregate: 'count', grouped: true,
   categorySort: 'original', categoryOrder: 'value', seriesSort: 'asc', transpose: false,
-  empty: 'blank', filter: '', rowFilters: [], filterLogic: 'all', decimals: 0, barWidth: 54, rounded: false, subtitle: '',
+  empty: 'blank', filter: '', rowFilters: [], filterLogic: 'all', detailHiddenFields: [], detailViews: [], decimals: 0, barWidth: 54, rounded: false, subtitle: '',
 });
 export function matrixFromData(data: Datum[], config: Config): Matrix {
   const filtered = data.filter(d => !config.filter || d.category.includes(config.filter));
@@ -132,6 +134,8 @@ export function hydrateConfig(value: unknown): Config {
   config.labelContent = raw.labelContent === 'percent' ? 'percent' : 'value';
   config.rowFilters = Array.isArray(raw.rowFilters) ? raw.rowFilters.filter(rule => rule && typeof rule.fieldId === 'string' && typeof rule.fieldName === 'string' && ['eq', 'neq', 'contains', 'notContains', 'empty', 'notEmpty'].includes(rule.operator)).map(rule => ({ fieldId: rule.fieldId, fieldName: rule.fieldName, operator: rule.operator, value: String(rule.value ?? '') })) : [];
   config.filterLogic = raw.filterLogic === 'any' ? 'any' : 'all';
+  config.detailHiddenFields = Array.isArray(raw.detailHiddenFields) ? [...new Set(raw.detailHiddenFields.filter(key => typeof key === 'string'))] : [];
+  config.detailViews = Array.isArray(raw.detailViews) ? raw.detailViews.filter(item => item && typeof item.tableId === 'string' && typeof item.viewId === 'string').map(({ tableId, viewId }) => ({ tableId, viewId })) : [];
   if (config.axisMode === 'fields') { config.aggregate = 'count'; config.grouped = true; config.filter = ''; }
   config.decimals = Math.max(0, Math.min(2, Number(config.decimals) || 0));
   config.barWidth = Math.max(16, Math.min(96, Number(config.barWidth) || 54));
