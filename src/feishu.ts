@@ -5,6 +5,7 @@ import { initializeDashboard } from './dashboard-session';
 import { decodeDashboardMatrix } from './dashboard-data';
 import { dashboardAnchorFields } from './field-plan';
 import { loadRecordCounts } from './record-counts';
+import { loadRecordDetails, type Segment } from './record-details';
 type SDK = typeof import('@lark-base-open/js-sdk');
 let sdk: SDK;
 let recordSignal: AbortController | undefined;
@@ -79,6 +80,13 @@ export async function loadLiveData(config: Config, viewing: boolean): Promise<Da
 export async function saveLive(config: Config): Promise<void> {
   const success = await sdk.bitable.dashboard.saveConfig({ dataConditions: conditions(config), customConfig: { chartConfig: { ...config } } });
   if (!success) throw new Error('飞书未确认保存成功，请稍后重试');
+}
+export function loadDetails(config: Config, segment: Segment, signal: AbortSignal) {
+  return loadRecordDetails({ getTableById: recordTable }, config, segment, signal);
+}
+export async function openRecord(tableId: string, recordId: string): Promise<void> {
+  const success = await sdk.bitable.ui.showRecordDetailDialog({ tableId, recordId });
+  if (!success) throw new Error('飞书未打开记录详情，请确认有源表读取权限，或在源表中查看该记录');
 }
 export function subscribe(onData: () => void, onConfig: (config: Config) => void): () => void {
   notifyDataChange = onData;

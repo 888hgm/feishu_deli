@@ -1,14 +1,16 @@
 import './style.css';
 import './filters.css';
 import { defaultConfig, hydrateConfig, palettes, validateConfig, type Config, type Datum, type Source, type Table, type RowFilter } from './model';
-import { demoData, demoTables } from './demo';
+import { demoData, demoTables, demoDetails } from './demo';
 import { createChart } from './chart';
+import { createDetailsDialog } from './details-dialog';
 import * as live from './feishu';
 
 const STORAGE = 'feishu-chart-plugin:config:v1';
 let config = defaultConfig();
 let tables: Table[] = demoTables;
 let data: Datum[] = [];
+let dataConfig = structuredClone(config);
 let activeTab = 'basic';
 let viewing = false;
 let creating = false;
@@ -31,13 +33,18 @@ const icons = {
   settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3" fill="white"/><circle cx="15" cy="17" r="3" fill="white"/></svg>',
 };
 root.innerHTML = `
-  <header class="app-header"><div class="brand-icon">${icons.bars}</div><div class="brand"><strong>柱状图组件</strong><span>飞书多维表格 / 自定义仪表盘 · v0.1.6</span></div><span id="mode-badge" class="badge">${live.isFeishu ? '连接飞书中' : '示例数据'}</span><div class="header-actions"><button id="save-top" class="button primary" data-action="save" hidden>添加到仪表盘</button><button class="button" data-action="export">${icons.arrow}导出图片</button><button class="button" data-action="toggle-panel">${icons.settings}<span id="toggle-label">配置</span></button></div></header>
+  <header class="app-header"><div class="brand-icon">${icons.bars}</div><div class="brand"><strong>柱状图组件</strong><span>飞书多维表格 / 自定义仪表盘 · v0.1.7</span></div><span id="mode-badge" class="badge">${live.isFeishu ? '连接飞书中' : '示例数据'}</span><div class="header-actions"><button id="save-top" class="button primary" data-action="save" hidden>添加到仪表盘</button><button class="button" data-action="export">${icons.arrow}导出图片</button><button class="button" data-action="toggle-panel">${icons.settings}<span id="toggle-label">配置</span></button></div></header>
   <div class="workspace"><main class="preview"><div class="preview-heading"><div><div class="eyebrow">图表预览</div><h1>让数据，一目了然。</h1></div><span class="live-indicator"><i></i><span id="data-status">实时预览</span></span></div>
     <section class="chart-card"><div class="card-heading"><div><h2 id="chart-title"></h2><p id="chart-subtitle"></p></div><span class="chart-kind" id="chart-kind"></span></div><div class="chart-wrap"><div id="chart" role="img" aria-label="柱状图预览"></div><div id="chart-message" role="status" hidden></div></div><div class="card-footer"><span id="source-note"></span><span id="record-note"></span></div></section>
     <section class="insights" aria-label="图表统计"><div><span id="stat-category-label">分类数量</span><strong id="stat-categories">—</strong><small id="stat-category-note">按所选横轴字段汇总</small></div><div><span>分组数量</span><strong id="stat-series">—</strong><small>当前图表中的数据系列</small></div><div><span id="stat-total-label">记录总数</span><strong id="stat-total">—</strong><small id="stat-total-note">统计范围内的记录</small></div></section>
     <p class="preview-note" id="preview-note">当前使用示例数据，调整右侧选项即可查看效果。</p>
   </main><aside class="sidebar" aria-label="柱状图配置"><div class="sidebar-header"><strong>柱状图</strong><button class="icon-button" data-action="toggle-panel" aria-label="收起配置">×</button></div><nav class="tabs" aria-label="配置选项卡"><button data-action="tab" data-value="basic" role="tab">基础配置</button><button data-action="tab" data-value="custom" role="tab">自定义配置</button><button data-action="tab" data-value="analysis" role="tab">分析</button></nav><div id="panel" class="panel"></div><footer class="sidebar-footer"><span id="save-state">尚未保存</span><button id="save" class="button primary" data-action="save">保存配置</button></footer></aside></div><div id="toast" class="toast" role="status" hidden></div>`;
-const chart = createChart(document.querySelector<HTMLElement>('#chart')!);
+const details = createDetailsDialog(root, live.isFeishu ? live.openRecord : undefined);
+const chart = createChart(document.querySelector<HTMLElement>('#chart')!, segment => {
+  if (dataError || !query('#chart-message').hidden || dataConfig.axisMode !== 'fields') return;
+  const snapshot = structuredClone(dataConfig);
+  details.open(segment, signal => live.isFeishu ? live.loadDetails(snapshot, segment, signal) : demoDetails(snapshot, segment, signal));
+});
 root.insertAdjacentHTML('beforeend', '<div id="filter-editor" hidden></div>');
 root.querySelector('.header-actions')?.insertAdjacentHTML('afterbegin', '<button class="button" data-action="refresh">刷新数据</button>');
 const query = <T extends HTMLElement = HTMLElement>(selector: string) => document.querySelector<T>(selector)!;
@@ -164,7 +171,7 @@ async function refresh(): Promise<void> {
     if (live.isFeishu) chartMessage('正在读取飞书数据…');
     const result = live.isFeishu ? await live.loadLiveData(snapshot, viewing) : demoData(snapshot);
     if (request !== sequence) return;
-    data = result; draw(); query('#data-status').textContent = '实时预览';
+    data = result; dataConfig = snapshot; draw(); query('#data-status').textContent = '实时预览';
     if (live.isFeishu && viewing) await live.rendered();
     } catch (error) { if (request === sequence) { data = []; try { draw(); } catch {} report(error); } }
 }

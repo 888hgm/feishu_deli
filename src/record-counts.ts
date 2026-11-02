@@ -1,8 +1,9 @@
-import type { Config, Datum, RowFilter } from './model.ts';
+import type { Config, Datum, RowFilter, Source } from './model.ts';
 
-interface RecordItem { recordId: string; fields: Record<string, unknown> }
+export interface RecordItem { recordId: string; fields: Record<string, unknown> }
 interface RecordPage { records: RecordItem[]; hasMore: boolean; pageToken?: number }
 export interface RecordTable {
+  getName?(): Promise<string>;
   getFieldMetaList(): Promise<{ id: string; name: string }[]>;
   getRecordsByPage(params: { pageSize: number; pageToken?: number; stringValue: boolean }): Promise<RecordPage>;
 }
@@ -29,9 +30,14 @@ export function matchesFilter(value: unknown, rule: RowFilter): boolean {
   }
 }
 
-/** 分页读取当前账号可读的全表记录，先筛选记录，再对任意数量的字段独立计数。 */
-export async function loadRecordCounts(base: RecordBase, config: Config, signal?: AbortSignal): Promise<Datum[]> {
-  const result: Datum[] = [];
+export interface FilteredRecord {
+  source: Source;
+  metas: { id: string; name: string }[];
+  record: RecordItem;
+}
+
+/** 统计与下钻共用同一条分页、去重及筛选路径，读取失败时不返回部分结果。 */
+export async function* filteredRecords(base: RecordBase, config: Config, signal?: AbortSignal): AsyncGenerator<FilteredRecord> {
   const sources = config.multi ? config.sources : config.sources.slice(0, 1);
   for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex++) {
     const source = sources[sourceIndex], fields = source.axisFields ?? [];
@@ -45,7 +51,6 @@ export async function loadRecordCounts(base: RecordBase, config: Config, signal?
       if (!field) throw new Error(`筛选字段“${rule.fieldName}”不可用，请重新设置筛选条件`);
       return { ...rule, fieldId: field.id };
     });
-    const counts = fields.map(() => new Map<string, number>());
     const seenRecords = new Set<string>(), seenTokens = new Set<number>();
     let pageToken: number | undefined;
     while (true) {
@@ -59,16 +64,27 @@ export async function loadRecordCounts(base: RecordBase, config: Config, signal?
         seenRecords.add(record.recordId);
         const accepted = !rules.length || (config.filterLogic === 'any' ? rules.some(rule => matchesFilter(record.fields[rule.fieldId], rule)) : rules.every(rule => matchesFilter(record.fields[rule.fieldId], rule)));
         if (!accepted) continue;
-        fields.forEach((field, index) => {
-          const label = cellText(record.fields[field.id]) || '未填写';
-          counts[index].set(label, (counts[index].get(label) ?? 0) + 1);
-        });
+        yield { source, metas, record };
       }
       if (!page.hasMore) break;
       if (typeof page.pageToken !== 'number' || !Number.isFinite(page.pageToken) || seenTokens.has(page.pageToken)) throw new Error('飞书返回的分页标记异常，未展示不完整的统计结果');
       seenTokens.add(page.pageToken); pageToken = page.pageToken;
     }
-    fields.forEach((field, index) => counts[index].forEach((value, series) => result.push({ category: field.name, series, value })));
   }
+}
+
+/** 分页读取当前账号可读的全表记录，先筛选记录，再对任意数量的字段独立计数。 */
+export async function loadRecordCounts(base: RecordBase, config: Config, signal?: AbortSignal): Promise<Datum[]> {
+  const counts = new Map<string, Map<string, number>>();
+  for await (const { source, record } of filteredRecords(base, config, signal)) {
+    for (const field of source.axisFields ?? []) {
+      const label = cellText(record.fields[field.id]) || '未填写';
+      const group = counts.get(field.name) ?? new Map<string, number>();
+      group.set(label, (group.get(label) ?? 0) + 1);
+      counts.set(field.name, group);
+    }
+  }
+  const result: Datum[] = [];
+  counts.forEach((group, category) => group.forEach((value, series) => result.push({ category, series, value })));
   return result;
 }

@@ -1,6 +1,6 @@
 {
   "name": "feishu-chart-plugin",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Feishu Bitable dashboard chart with one stacked bar per selected status field",
   "private": true,
   "type": "module",

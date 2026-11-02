@@ -4,9 +4,18 @@ import { GridComponent, LegendComponent, TooltipComponent, DataZoomComponent, Ar
 import { CanvasRenderer } from 'echarts/renderers';
 import { graphic } from 'echarts/core';
 import { matrixFromData, palettes, percentMatrix, type Config, type Datum } from './model';
+import type { Segment } from './record-details';
 echarts.use([BarChart, GridComponent, LegendComponent, TooltipComponent, DataZoomComponent, AriaComponent, CanvasRenderer]);
-export function createChart(element: HTMLElement) {
+export function createChart(element: HTMLElement, onSegmentClick?: (segment: Segment) => void) {
   const chart = echarts.init(element);
+  let displayed: ReturnType<typeof matrixFromData> | undefined;
+  let drillable = false;
+  chart.on('click', params => {
+    if (!drillable || params.componentType !== 'series' || params.seriesType !== 'bar' || !displayed) return;
+    const category = displayed.categories[params.dataIndex], series = displayed.series[params.seriesIndex ?? -1];
+    const count = displayed.values[params.seriesIndex ?? -1]?.[params.dataIndex];
+    if (category !== undefined && series !== undefined && count > 0) onSegmentClick?.({ category, series, count });
+  });
   let latest: { data: Datum[]; config: Config } | null = null;
   let redraw = () => {};
   const observer = new ResizeObserver(() => { chart.resize(); redraw(); });
@@ -15,6 +24,8 @@ export function createChart(element: HTMLElement) {
     draw(data: Datum[], config: Config) {
       latest = { data, config };
       const matrix = matrixFromData(data, config);
+      displayed = matrix;
+      drillable = config.axisMode === 'fields';
       const percent = config.chartType === 'percent';
       if (percent && matrix.values.some(row => row.some(n => n < 0))) throw new Error('百分比堆积图暂不支持负数，请改用分组柱状图');
       const values = percent ? percentMatrix(matrix) : matrix.values;
@@ -42,7 +53,7 @@ export function createChart(element: HTMLElement) {
         yAxis: config.transpose ? categoryAxis : valueAxis,
         dataZoom: matrix.categories.length > 12 ? [{ type: 'slider', [config.transpose ? 'yAxisIndex' : 'xAxisIndex']: 0, start: 0, end: 100 * 12 / matrix.categories.length, height: 18 }] : [],
         series: matrix.series.map((name, s) => ({
-          name, type: 'bar', stack: config.chartType === 'grouped' ? undefined : 'total',
+          name, type: 'bar', cursor: drillable ? 'pointer' : 'default', stack: config.chartType === 'grouped' ? undefined : 'total',
           barMaxWidth: config.barWidth, barGap: '20%', emphasis: { focus: 'series' },
           itemStyle: { borderRadius: config.rounded ? (config.transpose ? [0, 4, 4, 0] : [4, 4, 0, 0]) : 0,
             color: config.gradient ? new graphic.LinearGradient(0, 0, config.transpose ? 1 : 0, config.transpose ? 0 : 1,

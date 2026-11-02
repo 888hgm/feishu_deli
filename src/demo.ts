@@ -1,5 +1,6 @@
 import type { Config, Datum, Table } from './model';
 import { matchesFilter } from './record-counts.ts';
+import { loadRecordDetails, type Segment } from './record-details.ts';
 export const demoTables: Table[] = [
   { id: 'demo-company', name: '个人型中性笔公司', fields: [
     { id: 'company', name: '产品公司', numeric: false },
@@ -61,4 +62,14 @@ export function demoData(config: Config): Datum[] {
       return { category, series, value };
     });
   });
+}
+export function demoDetails(config: Config, segment: Segment, signal: AbortSignal) {
+  return loadRecordDetails({ async getTableById(id) {
+    const meta = demoTables.find(table => table.id === id)!;
+    return {
+      async getName() { return meta.name; },
+      async getFieldMetaList() { return meta.fields; },
+      async getRecordsByPage() { return { hasMore: false, records: rows[id === 'demo-team' ? 1 : 0].map((fields, index) => ({ recordId: `demo-${index}`, fields: { ...fields } })) }; },
+    };
+  } }, config, segment, signal);
 }
