@@ -47,7 +47,9 @@ export async function loadRecordDetails(base: RecordBase, config: Config, segmen
   }
   for await (const { source, metas, record } of filteredRecords(base, config, signal)) {
     const field = source.axisFields?.find(field => field.name === segment.category);
-    if (!field || (cellText(record.fields[field.id]) || '未填写') !== segment.series) continue;
+    if (!field) continue;
+    const status = cellText(record.fields[field.id]);
+    if (status === '' || status !== segment.series) continue;
     if (!names.has(source.tableId)) {
       const table = await base.getTableById(source.tableId);
       names.set(source.tableId, table.getName ? await table.getName() : source.tableId);

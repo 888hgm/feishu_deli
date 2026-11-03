@@ -82,7 +82,9 @@ export async function loadRecordCounts(base: RecordBase, config: Config, signal?
   const counts = new Map<string, Map<string, number>>();
   for await (const { source, record } of filteredRecords(base, config, signal)) {
     for (const field of source.axisFields ?? []) {
-      const label = cellText(record.fields[field.id]) || '未填写';
+      const label = cellText(record.fields[field.id]);
+      // 只跳过当前字段的空白值；同一记录的其他非空字段仍独立计数。
+      if (label === '') continue;
       const group = counts.get(field.name) ?? new Map<string, number>();
       group.set(label, (group.get(label) ?? 0) + 1);
       counts.set(field.name, group);

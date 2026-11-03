@@ -1,14 +1,12 @@
 import './style.css';
 import './filters.css';
-import { defaultConfig, hydrateConfig, palettes, validateConfig, type Config, type Datum, type Source, type Table, type RowFilter } from './model';
-import { demoData, demoTables, demoDetails } from './demo';
+import { defaultConfig, palettes, validateConfig, type Config, type Datum, type Source, type Table, type RowFilter } from './model';
 import { createChart } from './chart';
 import { createDetailsDialog } from './details-dialog';
 import * as live from './feishu';
 
-const STORAGE = 'feishu-chart-plugin:config:v1';
 let config = defaultConfig();
-let tables: Table[] = demoTables;
+let tables: Table[] = [];
 let data: Datum[] = [];
 let dataConfig = structuredClone(config);
 let activeTab = 'basic';
@@ -24,7 +22,7 @@ let refreshTimer: ReturnType<typeof setTimeout>;
 let toastTimer: ReturnType<typeof setTimeout>;
 let savedJSON = '';
 let busy = false;
-let ready = !live.isFeishu;
+let ready = false;
 const root = document.querySelector<HTMLDivElement>('#app')!;
 const escape = (value: unknown) => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const icons = {
@@ -33,11 +31,11 @@ const icons = {
   settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3" fill="white"/><circle cx="15" cy="17" r="3" fill="white"/></svg>',
 };
 root.innerHTML = `
-  <header class="app-header"><div class="brand-icon">${icons.bars}</div><div class="brand"><strong>柱状图组件</strong><span>飞书多维表格 / 自定义仪表盘 · v0.1.9</span></div><span id="mode-badge" class="badge">${live.isFeishu ? '连接飞书中' : '示例数据'}</span><div class="header-actions"><button id="save-top" class="button primary" data-action="save" hidden>添加到仪表盘</button><button class="button" data-action="export">${icons.arrow}导出图片</button><button class="button" data-action="toggle-panel">${icons.settings}<span id="toggle-label">配置</span></button></div></header>
+  <header class="app-header"><div class="brand-icon">${icons.bars}</div><div class="brand"><strong>柱状图组件</strong><span>飞书多维表格 / 自定义仪表盘 · v0.1.10</span></div><span id="mode-badge" class="badge">${live.isFeishu ? '连接飞书中' : '待连接飞书'}</span><div class="header-actions"><button id="save-top" class="button primary" data-action="save" hidden>添加到仪表盘</button><button class="button" data-action="export">${icons.arrow}导出图片</button><button class="button" data-action="toggle-panel">${icons.settings}<span id="toggle-label">配置</span></button></div></header>
   <div class="workspace"><main class="preview"><div class="preview-heading"><div><div class="eyebrow">图表预览</div><h1>让数据，一目了然。</h1></div><span class="live-indicator"><i></i><span id="data-status">实时预览</span></span></div>
     <section class="chart-card"><div class="card-heading"><div><h2 id="chart-title"></h2><p id="chart-subtitle"></p></div><span class="chart-kind" id="chart-kind"></span></div><div class="chart-wrap"><div id="chart" role="img" aria-label="柱状图预览"></div><div id="chart-message" role="status" hidden></div></div><div class="card-footer"><span id="source-note"></span><span id="record-note"></span></div></section>
     <section class="insights" aria-label="图表统计"><div><span id="stat-category-label">分类数量</span><strong id="stat-categories">—</strong><small id="stat-category-note">按所选横轴字段汇总</small></div><div><span>分组数量</span><strong id="stat-series">—</strong><small>当前图表中的数据系列</small></div><div><span id="stat-total-label">记录总数</span><strong id="stat-total">—</strong><small id="stat-total-note">统计范围内的记录</small></div></section>
-    <p class="preview-note" id="preview-note">当前使用示例数据，调整右侧选项即可查看效果。</p>
+    <p class="preview-note" id="preview-note">请通过飞书多维表格仪表盘打开此插件。</p>
   </main><aside class="sidebar" aria-label="柱状图配置"><div class="sidebar-header"><strong>柱状图</strong><button class="icon-button" data-action="toggle-panel" aria-label="收起配置">×</button></div><nav class="tabs" aria-label="配置选项卡"><button data-action="tab" data-value="basic" role="tab">基础配置</button><button data-action="tab" data-value="custom" role="tab">自定义配置</button><button data-action="tab" data-value="analysis" role="tab">分析</button></nav><div id="panel" class="panel"></div><footer class="sidebar-footer"><span id="save-state">尚未保存</span><button id="save" class="button primary" data-action="save">保存配置</button></footer></aside></div><div id="toast" class="toast" role="status" hidden></div>`;
 const details = createDetailsDialog(root, live.isFeishu ? live.openRecord : undefined, {
   hiddenFields: () => config.detailHiddenFields,
@@ -50,7 +48,7 @@ const chart = createChart(document.querySelector<HTMLElement>('#chart')!, segmen
   const snapshot = structuredClone(dataConfig);
   details.open(segment, signal => {
     const next = { ...snapshot, detailHiddenFields: config.detailHiddenFields, detailViews: config.detailViews };
-    return live.isFeishu ? live.loadDetails(next, segment, signal) : demoDetails(next, segment, signal);
+    return live.loadDetails(next, segment, signal);
   });
 });
 root.insertAdjacentHTML('beforeend', '<div id="filter-editor" hidden></div>');
@@ -70,7 +68,7 @@ function sourceFields(source: Source, index: number): string {
   if (config.axisMode === 'fields') {
     const selected = source.axisFields ?? [];
     return `<div class="field" id="axis-fields-${index}"><span>横轴字段（每个字段一根柱）</span><div class="field-picker">${table?.fields.map(field => `<label class="check"><input type="checkbox" data-axis-field="${escape(field.id)}" data-source="${index}" ${selected.some(f => f.id === field.id) ? 'checked' : ''}><span>${escape(field.name)}</span></label>`).join('') || '<p class="help">请先选择数据表</p>'}</div></div>
-      ${selected.length ? `<div class="axis-order"><span>柱子顺序</span>${selected.map((field, position) => `<div><b>${position + 1}</b><span>${escape(field.name)}</span><button data-action="move-field" data-source="${index}" data-index="${position}" data-step="-1" aria-label="上移 ${escape(field.name)}" ${position === 0 ? 'disabled' : ''}>↑</button><button data-action="move-field" data-source="${index}" data-index="${position}" data-step="1" aria-label="下移 ${escape(field.name)}" ${position === selected.length - 1 ? 'disabled' : ''}>↓</button></div>`).join('')}</div>` : ''}<p class="help">柱内按每个字段的值统计记录数，同名选项使用同一个颜色。空值计入“未填写”。</p>`;
+      ${selected.length ? `<div class="axis-order"><span>柱子顺序</span>${selected.map((field, position) => `<div><b>${position + 1}</b><span>${escape(field.name)}</span><button data-action="move-field" data-source="${index}" data-index="${position}" data-step="-1" aria-label="上移 ${escape(field.name)}" ${position === 0 ? 'disabled' : ''}>↑</button><button data-action="move-field" data-source="${index}" data-index="${position}" data-step="1" aria-label="下移 ${escape(field.name)}" ${position === selected.length - 1 ? 'disabled' : ''}>↓</button></div>`).join('')}</div>` : ''}<p class="help">柱内按每个字段的值统计记录数，同名选项使用同一个颜色。空白值不计入数量或百分比；其他字段独立统计。</p>`;
   }
   const fields: [string, string][] = [['', '请选择字段'], ...(table?.fields.map(f => [f.id, f.name] as [string, string]) ?? [])];
   return `${select('category', index ? '分类字段' : '横轴（类别）', fields, source.category, `data-source="${index}"`)}
@@ -118,7 +116,7 @@ function renderFilterEditor(): void {
 }
 function renderAnalysis(): void {
   const rows = data.filter(d => !config.filter || d.category.includes(config.filter));
-  query('#panel').innerHTML = `<div class="section"><div class="panel-intro"><span class="intro-icon">Σ</span><strong>当前统计结果</strong><p>${live.isFeishu ? '来自当前飞书数据源' : '当前展示的是本地示例数据'}。${config.filter ? '已应用分类关键词筛选。' : ''}</p></div><div class="data-table-wrap"><table class="data-table"><thead><tr><th>分类</th><th>分组</th><th>数值</th></tr></thead><tbody>${rows.slice(0, 100).map(row => `<tr><td>${escape(row.category)}</td><td>${escape(row.series)}</td><td>${row.value.toLocaleString('zh-CN', { maximumFractionDigits: 2 })}</td></tr>`).join('') || '<tr><td colspan="3">暂无数据</td></tr>'}</tbody></table></div>${rows.length > 100 ? '<p class="help">预览前 100 行汇总结果。</p>' : ''}</div>`;
+  query('#panel').innerHTML = `<div class="section"><div class="panel-intro"><span class="intro-icon">Σ</span><strong>当前统计结果</strong><p>${live.isFeishu ? '来自当前飞书数据源' : '尚未连接飞书数据源'}。${config.filter ? '已应用分类关键词筛选。' : ''}</p></div><div class="data-table-wrap"><table class="data-table"><thead><tr><th>分类</th><th>分组</th><th>数值</th></tr></thead><tbody>${rows.slice(0, 100).map(row => `<tr><td>${escape(row.category)}</td><td>${escape(row.series)}</td><td>${row.value.toLocaleString('zh-CN', { maximumFractionDigits: 2 })}</td></tr>`).join('') || '<tr><td colspan="3">暂无数据</td></tr>'}</tbody></table></div>${rows.length > 100 ? '<p class="help">预览前 100 行汇总结果。</p>' : ''}</div>`;
 }
 function updateSaveState(): void {
   const dirty = savedJSON !== JSON.stringify(config);
@@ -142,7 +140,7 @@ function chartMessage(message: string, error = false): void {
 function draw(): void {
   query('#chart-title').textContent = config.title || '未命名图表';
   query('#chart-title').hidden = !config.showTitle;
-  query('#chart-subtitle').textContent = config.subtitle || (config.axisMode === 'fields' ? '每个字段一根柱，按字段值统计记录数' : config.aggregate === 'count' ? '按所选分类与分组统计记录数量' : '按所选数值字段进行统计');
+  query('#chart-subtitle').textContent = config.subtitle || (config.axisMode === 'fields' ? '每个字段一根柱，空白值不参与统计' : config.aggregate === 'count' ? '按所选分类与分组统计记录数量' : '按所选数值字段进行统计');
   query('#chart-kind').textContent = ({ percent: '百分比堆积', stacked: '堆积柱状', grouped: '分组柱状' })[config.chartType];
   query('#source-note').textContent = (config.multi ? config.sources : config.sources.slice(0, 1)).map(s => tables.find(t => t.id === s.tableId)?.name ?? (live.isFeishu ? '飞书数据表' : '请选择数据源')).join(' + ');
   const matrix = chart.draw(data, config);
@@ -153,12 +151,12 @@ function draw(): void {
   query('#stat-category-label').textContent = config.axisMode === 'fields' ? '横轴字段数' : '分类数量';
   query('#stat-category-note').textContent = config.axisMode === 'fields' ? '每个选中字段对应一根柱' : '按所选横轴字段汇总';
   query('#stat-total-label').textContent = config.axisMode === 'fields' ? '字段统计次数' : config.aggregate === 'count' ? '记录总数' : '统计结果合计';
-  query('#stat-total-note').textContent = config.axisMode === 'fields' ? '每条记录在每个字段各统计一次' : config.aggregate === 'count' ? '当前分类范围内的记录' : '图表各统计值之和';
+  query('#stat-total-note').textContent = config.axisMode === 'fields' ? '每个字段仅统计非空记录' : config.aggregate === 'count' ? '当前分类范围内的记录' : '图表各统计值之和';
   query('#record-note').textContent = `${matrix.categories.length} 个分类 · ${matrix.series.length} 个分组`;
   if (dataError) {
     const selecting = dataError === '请至少选择一个横轴字段';
     chartMessage(selecting ? '请在右侧勾选横轴字段，每个字段会显示一根堆积柱。' : dataError, !selecting);
-  } else chartMessage(data.length ? '' : '暂无符合条件的数据');
+  } else chartMessage(data.length ? '' : config.axisMode === 'fields' ? '暂无符合条件的非空数据' : '暂无符合条件的数据');
   if (activeTab === 'analysis') renderAnalysis();
 }
 function report(error: unknown): void {
@@ -177,7 +175,7 @@ async function refresh(): Promise<void> {
   try {
     query('#data-status').textContent = '更新中';
     if (live.isFeishu) chartMessage('正在读取飞书数据…');
-    const result = live.isFeishu ? await live.loadLiveData(snapshot, viewing) : demoData(snapshot);
+    const result = await live.loadLiveData(snapshot, viewing);
     if (request !== sequence) return;
     data = result; dataConfig = snapshot; draw(); query('#data-status').textContent = '实时预览';
     if (live.isFeishu && viewing) await live.rendered();
@@ -302,8 +300,7 @@ root.addEventListener('click', async event => {
     busy = true; updateSaveState();
     const snapshot = structuredClone(config);
     try {
-      if (live.isFeishu) await live.saveLive(snapshot);
-      else localStorage.setItem(STORAGE, JSON.stringify(snapshot));
+      await live.saveLive(snapshot);
       savedJSON = JSON.stringify(snapshot);
       const wasCreating = creating; creating = false;
       toast(live.isFeishu ? (wasCreating ? '已提交添加到飞书仪表盘' : '已保存到飞书仪表盘') : '配置已保存到此浏览器');
@@ -327,13 +324,13 @@ async function init(): Promise<void> {
       live.subscribe(() => { void refresh(); }, next => { config = next; savedJSON = JSON.stringify(next); renderPanel(); void refresh(); });
       void live.syncTheme(() => { try { draw(); } catch (error) { report(error); } }).catch(() => {});
     } catch (error) {
-      query('#mode-badge').textContent = '未连接'; query('#preview-note').textContent = '飞书连接失败，未加载示例数据。'; report(error); return;
+      query('#mode-badge').textContent = '未连接'; query('#preview-note').textContent = '飞书连接失败，请检查插件宿主环境。'; report(error); return;
     }
   } else {
-    try {
-      const saved = localStorage.getItem(STORAGE);
-      if (saved) { config = hydrateConfig(JSON.parse(saved)); savedJSON = JSON.stringify(config); }
-    } catch { toast('浏览器存储不可用，仍可预览图表'); }
+    renderPanel();
+    query('#preview-note').textContent = '请通过飞书多维表格仪表盘打开此插件。';
+    chartMessage('请在飞书仪表盘中打开此插件');
+    return;
   }
   renderPanel(); await refresh();
 }
