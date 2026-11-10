@@ -53,7 +53,9 @@ export function createDetailsDialog(parent: HTMLElement, openRecord?: (tableId: 
     const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
     page = Math.min(page, pages - 1);
     const first = page * PAGE_SIZE, visible = filtered.slice(first, first + PAGE_SIZE);
-    query('#details-count').textContent = keyword.trim() ? `找到 ${filtered.length} 条 / 共 ${result.rows.length} 条` : `共 ${result.rows.length} 条记录`;
+    const countText = keyword.trim() ? `找到 ${filtered.length} 条 / 共 ${result.rows.length} 条` : `共 ${result.rows.length} 条记录`;
+    const skuTotal = filtered.reduce((sum, row) => sum + (row.quantity ?? 0), 0);
+    query('#details-count').textContent = countText + (result.aggregate === 'sum' ? ` · ${keyword.trim() ? '搜索结果 ' : ''}SKU合计 ${skuTotal.toLocaleString('zh-CN', { maximumFractionDigits: 6 })}` : '');
     query('#details-paging').innerHTML = `<span>${filtered.length ? first + 1 : 0}–${Math.min(first + PAGE_SIZE, filtered.length)} 条</span><button class="button" data-detail-action="prev" ${page === 0 ? 'disabled' : ''} aria-label="上一页">上一页</button><span>${page + 1} / ${pages}</span><button class="button" data-detail-action="next" ${page + 1 === pages ? 'disabled' : ''} aria-label="下一页">下一页</button>`;
     if (!visible.length) { query('#details-grid').innerHTML = `<p class="details-empty">${keyword.trim() ? '没有匹配搜索词的记录' : '暂无符合条件的记录'}</p>`; return; }
     const multi = new Set(result.rows.map(row => row.tableId)).size > 1;
@@ -81,7 +83,11 @@ export function createDetailsDialog(parent: HTMLElement, openRecord?: (tableId: 
       query('#details-order-note').textContent = result.orderNote ?? '';
       query<HTMLInputElement>('#details-search').disabled = false;
       query('#details-grid').setAttribute('aria-busy', 'false');
-      if (result.rows.length !== context.segment.count) query('#details-notice').textContent = `源数据已有变化：图中为 ${context.segment.count} 条，当前明细为 ${result.rows.length} 条。关闭后可刷新图表。`;
+      const actual = result.aggregate === 'sum' ? result.total ?? 0 : result.rows.length;
+      if (Math.abs(actual - context.segment.count) > 1e-9 * Math.max(1, Math.abs(actual), Math.abs(context.segment.count))) {
+        const unit = result.aggregate === 'sum' ? ' SKU' : ' 条';
+        query('#details-notice').textContent = `源数据已有变化：图中为 ${context.segment.count}${unit}，当前明细合计为 ${actual}${unit}。关闭后可刷新图表。`;
+      }
     } catch (error) {
       if (current !== context || controller.signal.aborted) return;
       query('#details-count').textContent = '明细读取失败';

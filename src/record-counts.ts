@@ -1,4 +1,5 @@
 import type { Config, Datum, RowFilter, Source } from './model.ts';
+import { addQuantity, skuQuantity } from './sku-metric.ts';
 
 export interface RecordItem { recordId: string; fields: Record<string, unknown> }
 interface RecordPage { records: RecordItem[]; hasMore: boolean; pageToken?: number }
@@ -38,6 +39,7 @@ export interface FilteredRecord {
   source: Source;
   metas: { id: string; name: string }[];
   record: RecordItem;
+  metric?: { id: string; name: string };
 }
 
 /** 统计与下钻共用同一条分页、去重及筛选路径，读取失败时不返回部分结果。 */
@@ -50,6 +52,8 @@ export async function* filteredRecords(base: RecordBase, config: Config, signal?
     const table = await base.getTableById(source.tableId);
     const metas = await table.getFieldMetaList();
     if (fields.some(field => !metas.some(meta => meta.id === field.id))) throw new Error('横轴字段不可用，请重新选择');
+    const metric = config.aggregate === 'sum' ? metas.find(meta => meta.id === source.metric) : undefined;
+    if (config.aggregate === 'sum' && !metric) throw new Error('SKU 数量字段不可用，请在配置中重新选择');
     const rules = config.rowFilters.map(rule => {
       const field = sourceIndex === 0 ? metas.find(meta => meta.id === rule.fieldId) : metas.find(meta => meta.name === rule.fieldName);
       if (!field) throw new Error(`筛选字段“${rule.fieldName}”不可用，请重新设置筛选条件`);
@@ -68,7 +72,7 @@ export async function* filteredRecords(base: RecordBase, config: Config, signal?
         seenRecords.add(record.recordId);
         const accepted = !rules.length || (config.filterLogic === 'any' ? rules.some(rule => matchesFilter(record.fields[rule.fieldId], rule)) : rules.every(rule => matchesFilter(record.fields[rule.fieldId], rule)));
         if (!accepted) continue;
-        yield { source, metas, record };
+        yield { source, metas, record, metric };
       }
       if (!page.hasMore) break;
       if (typeof page.pageToken !== 'number' || !Number.isFinite(page.pageToken) || seenTokens.has(page.pageToken)) throw new Error('飞书返回的分页标记异常，未展示不完整的统计结果');
@@ -77,16 +81,18 @@ export async function* filteredRecords(base: RecordBase, config: Config, signal?
   }
 }
 
-/** 分页读取当前账号可读的全表记录，先筛选记录，再对任意数量的字段独立计数。 */
+/** 先筛选记录，再逐字段计数或按该记录的 SKU 数量累加，空白状态不参与。 */
 export async function loadRecordCounts(base: RecordBase, config: Config, signal?: AbortSignal): Promise<Datum[]> {
   const counts = new Map<string, Map<string, number>>();
-  for await (const { source, record } of filteredRecords(base, config, signal)) {
+  for await (const { source, record, metric } of filteredRecords(base, config, signal)) {
+    let quantity: number | undefined;
     for (const field of source.axisFields ?? []) {
       const label = cellText(record.fields[field.id]);
       // 只跳过当前字段的空白值；同一记录的其他非空字段仍独立计数。
       if (label === '') continue;
+      quantity ??= metric ? skuQuantity(record.fields[metric.id], metric.name) : 1;
       const group = counts.get(field.name) ?? new Map<string, number>();
-      group.set(label, (group.get(label) ?? 0) + 1);
+      group.set(label, addQuantity(group.get(label) ?? 0, quantity));
       counts.set(field.name, group);
     }
   }

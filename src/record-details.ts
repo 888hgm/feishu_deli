@@ -1,9 +1,10 @@
 import type { Config } from './model.ts';
 import { cellText, filteredRecords, type RecordBase } from './record-counts.ts';
 import { detailSchema } from './detail-columns.ts';
+import { addQuantity, skuQuantity } from './sku-metric.ts';
 
 export interface Segment { category: string; series: string; count: number }
-export interface DetailRow { tableId: string; tableName: string; recordId: string; cells: Record<string, string>; fieldIds?: Record<string, string> }
+export interface DetailRow { tableId: string; tableName: string; recordId: string; cells: Record<string, string>; fieldIds?: Record<string, string>; quantity?: number }
 export interface RecordDetails {
   columns: string[]; rows: DetailRow[];
   columnKeys?: Record<string, string>;
@@ -11,6 +12,8 @@ export interface RecordDetails {
   views?: { id: string; name: string }[];
   viewId?: string;
   orderNote?: string;
+  aggregate?: 'count' | 'sum';
+  total?: number;
 }
 
 /** stringValue 模式下仍可能返回附件等结构，仅展示名称，不注入 HTML 或远程图片。 */
@@ -34,6 +37,7 @@ export async function loadRecordDetails(base: RecordBase, config: Config, segmen
   const columnKeys: Record<string, string> = Object.create(null);
   const names = new Map<string, string>();
   let primary: Awaited<ReturnType<typeof detailSchema>> | undefined;
+  let total = 0;
   for (const source of sources) {
     signal?.throwIfAborted();
     const table = await base.getTableById(source.tableId);
@@ -45,11 +49,13 @@ export async function loadRecordDetails(base: RecordBase, config: Config, segmen
       columns.add(meta.name);
     }
   }
-  for await (const { source, metas, record } of filteredRecords(base, config, signal)) {
+  for await (const { source, metas, record, metric } of filteredRecords(base, config, signal)) {
     const field = source.axisFields?.find(field => field.name === segment.category);
     if (!field) continue;
     const status = cellText(record.fields[field.id]);
     if (status === '' || status !== segment.series) continue;
+    const quantity = metric ? skuQuantity(record.fields[metric.id], metric.name) : 1;
+    total = addQuantity(total, quantity);
     if (!names.has(source.tableId)) {
       const table = await base.getTableById(source.tableId);
       names.set(source.tableId, table.getName ? await table.getName() : source.tableId);
@@ -61,9 +67,9 @@ export async function loadRecordDetails(base: RecordBase, config: Config, segmen
       cells[meta.name] = detailText(record.fields[meta.id]);
       fieldIds[meta.name] = meta.id;
     }
-    rows.push({ tableId: source.tableId, tableName: names.get(source.tableId)!, recordId: record.recordId, cells, fieldIds });
+    rows.push({ tableId: source.tableId, tableName: names.get(source.tableId)!, recordId: record.recordId, cells, fieldIds, quantity });
   }
-  return { columns: [...columns], rows, columnKeys, primaryTableId: sources[0]?.tableId, views: primary?.views ?? [], viewId: primary?.viewId, orderNote: primary?.note };
+  return { columns: [...columns], rows, columnKeys, primaryTableId: sources[0]?.tableId, views: primary?.views ?? [], viewId: primary?.viewId, orderNote: primary?.note, aggregate: config.aggregate === 'sum' ? 'sum' : 'count', total };
 }
 
 export function searchDetailRows(rows: DetailRow[], keyword: string, columns?: string[]): DetailRow[] {

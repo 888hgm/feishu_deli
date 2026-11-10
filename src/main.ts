@@ -31,7 +31,7 @@ const icons = {
   settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3" fill="white"/><circle cx="15" cy="17" r="3" fill="white"/></svg>',
 };
 root.innerHTML = `
-  <header class="app-header"><div class="brand-icon">${icons.bars}</div><div class="brand"><strong>柱状图组件</strong><span>飞书多维表格 / 自定义仪表盘 · v0.1.10</span></div><span id="mode-badge" class="badge">${live.isFeishu ? '连接飞书中' : '待连接飞书'}</span><div class="header-actions"><button id="save-top" class="button primary" data-action="save" hidden>添加到仪表盘</button><button class="button" data-action="export">${icons.arrow}导出图片</button><button class="button" data-action="toggle-panel">${icons.settings}<span id="toggle-label">配置</span></button></div></header>
+  <header class="app-header"><div class="brand-icon">${icons.bars}</div><div class="brand"><strong>柱状图组件</strong><span>飞书多维表格 / 自定义仪表盘 · v0.1.11</span></div><span id="mode-badge" class="badge">${live.isFeishu ? '连接飞书中' : '待连接飞书'}</span><div class="header-actions"><button id="save-top" class="button primary" data-action="save" hidden>添加到仪表盘</button><button class="button" data-action="export">${icons.arrow}导出图片</button><button class="button" data-action="toggle-panel">${icons.settings}<span id="toggle-label">配置</span></button></div></header>
   <div class="workspace"><main class="preview"><div class="preview-heading"><div><div class="eyebrow">图表预览</div><h1>让数据，一目了然。</h1></div><span class="live-indicator"><i></i><span id="data-status">实时预览</span></span></div>
     <section class="chart-card"><div class="card-heading"><div><h2 id="chart-title"></h2><p id="chart-subtitle"></p></div><span class="chart-kind" id="chart-kind"></span></div><div class="chart-wrap"><div id="chart" role="img" aria-label="柱状图预览"></div><div id="chart-message" role="status" hidden></div></div><div class="card-footer"><span id="source-note"></span><span id="record-note"></span></div></section>
     <section class="insights" aria-label="图表统计"><div><span id="stat-category-label">分类数量</span><strong id="stat-categories">—</strong><small id="stat-category-note">按所选横轴字段汇总</small></div><div><span>分组数量</span><strong id="stat-series">—</strong><small>当前图表中的数据系列</small></div><div><span id="stat-total-label">记录总数</span><strong id="stat-total">—</strong><small id="stat-total-note">统计范围内的记录</small></div></section>
@@ -63,12 +63,19 @@ function select(key: string, label: string, options: [string, string][], current
 function segments(action: string, options: [string, string][], current: string): string {
   return `<div class="segments">${options.map(([value, label]) => `<button type="button" data-action="${action}" data-value="${value}" class="${current === value ? 'selected' : ''}" aria-pressed="${current === value}">${label}</button>`).join('')}</div>`;
 }
+function skuMetricControl(source: Source, index: number): string {
+  const table = tables.find(item => item.id === source.tableId);
+  return select('metric', index ? `数据源 ${index + 1} SKU数量字段` : 'SKU数量字段', [['', '请选择 SKU 数量数字字段'], ...(table?.fields.filter(field => field.numeric).map(field => [field.id, field.name] as [string, string]) ?? [])], source.metric, `data-source="${index}"`);
+}
+function suggestedSkuField(tableId: string): string {
+  return tables.find(table => table.id === tableId)?.fields.find(field => field.numeric && field.name.replace(/\s/g, '').toUpperCase() === 'SKU数量')?.id ?? '';
+}
 function sourceFields(source: Source, index: number): string {
   const table = tables.find(t => t.id === source.tableId);
   if (config.axisMode === 'fields') {
     const selected = source.axisFields ?? [];
-    return `<div class="field" id="axis-fields-${index}"><span>横轴字段（每个字段一根柱）</span><div class="field-picker">${table?.fields.map(field => `<label class="check"><input type="checkbox" data-axis-field="${escape(field.id)}" data-source="${index}" ${selected.some(f => f.id === field.id) ? 'checked' : ''}><span>${escape(field.name)}</span></label>`).join('') || '<p class="help">请先选择数据表</p>'}</div></div>
-      ${selected.length ? `<div class="axis-order"><span>柱子顺序</span>${selected.map((field, position) => `<div><b>${position + 1}</b><span>${escape(field.name)}</span><button data-action="move-field" data-source="${index}" data-index="${position}" data-step="-1" aria-label="上移 ${escape(field.name)}" ${position === 0 ? 'disabled' : ''}>↑</button><button data-action="move-field" data-source="${index}" data-index="${position}" data-step="1" aria-label="下移 ${escape(field.name)}" ${position === selected.length - 1 ? 'disabled' : ''}>↓</button></div>`).join('')}</div>` : ''}<p class="help">柱内按每个字段的值统计记录数，同名选项使用同一个颜色。空白值不计入数量或百分比；其他字段独立统计。</p>`;
+    return `${index > 0 && config.aggregate === 'sum' ? skuMetricControl(source, index) : ''}<div class="field" id="axis-fields-${index}"><span>横轴字段（每个字段一根柱）</span><div class="field-picker">${table?.fields.map(field => `<label class="check"><input type="checkbox" data-axis-field="${escape(field.id)}" data-source="${index}" ${selected.some(f => f.id === field.id) ? 'checked' : ''}><span>${escape(field.name)}</span></label>`).join('') || '<p class="help">请先选择数据表</p>'}</div></div>
+      ${selected.length ? `<div class="axis-order"><span>柱子顺序</span>${selected.map((field, position) => `<div><b>${position + 1}</b><span>${escape(field.name)}</span><button data-action="move-field" data-source="${index}" data-index="${position}" data-step="-1" aria-label="上移 ${escape(field.name)}" ${position === 0 ? 'disabled' : ''}>↑</button><button data-action="move-field" data-source="${index}" data-index="${position}" data-step="1" aria-label="下移 ${escape(field.name)}" ${position === selected.length - 1 ? 'disabled' : ''}>↓</button></div>`).join('')}</div>` : ''}<p class="help">${config.aggregate === 'sum' ? '柱内按每个状态对应记录的 SKU 数量累加' : '柱内按每个状态统计记录数'}，同名状态使用同一个颜色。空白状态不计入数量或百分比；其他字段独立统计。</p>`;
   }
   const fields: [string, string][] = [['', '请选择字段'], ...(table?.fields.map(f => [f.id, f.name] as [string, string]) ?? [])];
   return `${select('category', index ? '分类字段' : '横轴（类别）', fields, source.category, `data-source="${index}"`)}
@@ -88,12 +95,12 @@ function renderPanel(): void {
     <div class="section">${select('axisMode', '横轴模式', [['fields', '多个字段各自作为一根柱'], ['values', '单个字段的值作为分类']], config.axisMode)}${select('tableId', '数据源', tableOptions, source?.tableId, 'data-source="0"')}${check('multi', '多数据源模式')}
       ${config.multi ? `<div class="additional-sources">${config.sources.slice(1).map((s, i) => `<div class="source-block"><div class="source-block-heading">数据源 ${i + 2}<button class="text-button" data-action="remove-source" data-index="${i + 1}">移除</button></div>${select('tableId', '', tableOptions, s.tableId, `data-source="${i + 1}"`)}${sourceFields(s, i + 1)}</div>`).join('')}<button class="add-source" data-action="add-source">＋ 添加数据源</button><p class="help">分别映射字段后合并同名类别；支持计数与求和。</p></div>` : ''}
       <div class="field range-field"><span>数据范围</span><div class="range-box"><span>▤ 全部数据</span><button class="text-button" data-action="filter">筛选${config.axisMode === 'fields' ? (config.rowFilters.length ? ` (${config.rowFilters.length})` : '') : config.filter ? ' (1)' : ''}</button></div></div>
-      ${config.axisMode === 'fields' ? '<p class="help scope-help">先筛选可读的全表记录，再逐字段计数；不随仪表盘外层全局筛选变化。</p>' : filterOpen || config.filter ? `<label class="field filter-field"><span>仅显示分类名称包含</span><input data-key="filter" value="${escape(config.filter)}" placeholder="输入关键词，清空则显示全部"><small>对汇总后的分类筛选，不改变原始记录。</small></label>` : ''}</div>
+      ${config.axisMode === 'fields' ? '<p class="help scope-help">先筛选可读的全表记录，再逐字段统计；不随仪表盘外层全局筛选变化。</p>' : filterOpen || config.filter ? `<label class="field filter-field"><span>仅显示分类名称包含</span><input data-key="filter" value="${escape(config.filter)}" placeholder="输入关键词，清空则显示全部"><small>对汇总后的分类筛选，不改变原始记录。</small></label>` : ''}</div>
     <div class="section">${select('chartType', '图表类型', [['percent', '百分比堆积柱状图'], ['stacked', '堆积柱状图'], ['grouped', '分组柱状图']], config.chartType)}
       <div class="field"><span>主题色</span><div class="palette-field"><span class="swatches">${palettes[config.palette].colors.map(c => `<i style="background:${c}"></i>`).join('')}</span><select data-key="palette" aria-label="主题色">${Object.entries(palettes).map(([key, p]) => `<option value="${key}" ${key === config.palette ? 'selected' : ''}>${p.name}</option>`).join('')}</select></div></div>
       ${check('gradient', '渐变填充')}<div class="field options-label"><span>图表选项</span></div><div class="check-grid">${check('legend', '图例')}${check('labels', '数据标签')}${check('axes', '坐标轴')}${check('grid', '网格线')}</div>${config.chartType === 'percent' && config.labels ? `<div style="margin-top:16px">${select('labelContent', '柱内标签显示', [['value', '实际数量'], ['percent', '百分比']], config.labelContent)}<p class="help">柱高按比例显示，标签可选择实际数量。</p></div>` : ''}</div>
     <div class="section">${source ? sourceFields(source, 0) : '<p class="help">请先选择数据源</p>'}${config.axisMode === 'values' ? '<p class="help">相同类别自动汇总。</p>' : ''}<div class="field"><span>横轴排序依据</span>${segments('category-order', [['value', config.axisMode === 'fields' ? '字段名称' : '横轴值'], ['total', '统计值'], ['original', config.axisMode === 'fields' ? '选择顺序' : '返回顺序']], config.categorySort === 'original' ? 'original' : config.categoryOrder)}</div>${config.categorySort !== 'original' ? `<div class="field"><span>排序规则</span>${segments('category-sort', [['asc', '↥ 正序'], ['desc', '↧ 倒序']], config.categorySort)}</div>` : ''}</div>
-    <div class="section">${select('aggregate', '纵轴（统计方式）', config.axisMode === 'fields' ? [['count', '统计记录总数']] : [['count', '统计记录总数'], ['sum', '求和'], ...(!config.multi || config.sources.length <= 1 ? [['avg', '平均值'], ['max', '最大值'], ['min', '最小值']] as [string, string][] : [])], config.aggregate)}${config.axisMode === 'values' ? check('grouped', '分组聚合') : '<p class="help">柱内分段依据：每个横轴字段自身的值。</p>'}
+    <div class="section">${select('aggregate', '纵轴（统计方式）', config.axisMode === 'fields' ? [['count', '统计记录总数'], ['sum', 'SKU数量求和']] : [['count', '统计记录总数'], ['sum', '求和'], ...(!config.multi || config.sources.length <= 1 ? [['avg', '平均值'], ['max', '最大值'], ['min', '最小值']] as [string, string][] : [])], config.aggregate)}${config.axisMode === 'fields' && config.aggregate === 'sum' && source ? `${skuMetricControl(source, 0)}<p class="help">累加所选状态对应记录的 SKU 数量；SKU 空值按 0 处理，空白状态不参与。百分比按每根柱的 SKU 合计计算。</p>` : ''}${config.axisMode === 'values' ? check('grouped', '分组聚合') : '<p class="help">柱内分段依据：每个横轴字段自身的值。</p>'}
       ${config.grouped ? `<div class="group-box"><div class="field"><span>分组排序依据</span>${segments('series-order', [['value', '字段值'], ['original', '返回顺序']], config.seriesSort === 'original' ? 'original' : 'value')}</div>${config.seriesSort !== 'original' ? `<div class="field"><span>排序规则</span>${segments('series-sort', [['asc', '↥ 正序'], ['desc', '↧ 倒序']], config.seriesSort)}</div>` : ''}</div>` : ''}</div>
     <div class="section last"><label class="switch-row"><span>切换行 / 列</span><input type="checkbox" role="switch" data-key="transpose" ${config.transpose ? 'checked' : ''}></label>${select('empty', '零值标签显示为', [['blank', '空'], ['zero', '0'], ['dash', '—']], config.empty)}</div>`;
   else if (activeTab === 'custom') query('#panel').innerHTML = `
@@ -140,7 +147,7 @@ function chartMessage(message: string, error = false): void {
 function draw(): void {
   query('#chart-title').textContent = config.title || '未命名图表';
   query('#chart-title').hidden = !config.showTitle;
-  query('#chart-subtitle').textContent = config.subtitle || (config.axisMode === 'fields' ? '每个字段一根柱，空白值不参与统计' : config.aggregate === 'count' ? '按所选分类与分组统计记录数量' : '按所选数值字段进行统计');
+  query('#chart-subtitle').textContent = config.subtitle || (config.axisMode === 'fields' ? config.aggregate === 'sum' ? '每个字段一根柱，按 SKU 数量求和；空白状态不参与统计' : '每个字段一根柱，空白值不参与统计' : config.aggregate === 'count' ? '按所选分类与分组统计记录数量' : '按所选数值字段进行统计');
   query('#chart-kind').textContent = ({ percent: '百分比堆积', stacked: '堆积柱状', grouped: '分组柱状' })[config.chartType];
   query('#source-note').textContent = (config.multi ? config.sources : config.sources.slice(0, 1)).map(s => tables.find(t => t.id === s.tableId)?.name ?? (live.isFeishu ? '飞书数据表' : '请选择数据源')).join(' + ');
   const matrix = chart.draw(data, config);
@@ -150,8 +157,8 @@ function draw(): void {
   query('#stat-total').textContent = total.toLocaleString('zh-CN', { maximumFractionDigits: 2 });
   query('#stat-category-label').textContent = config.axisMode === 'fields' ? '横轴字段数' : '分类数量';
   query('#stat-category-note').textContent = config.axisMode === 'fields' ? '每个选中字段对应一根柱' : '按所选横轴字段汇总';
-  query('#stat-total-label').textContent = config.axisMode === 'fields' ? '字段统计次数' : config.aggregate === 'count' ? '记录总数' : '统计结果合计';
-  query('#stat-total-note').textContent = config.axisMode === 'fields' ? '每个字段仅统计非空记录' : config.aggregate === 'count' ? '当前分类范围内的记录' : '图表各统计值之和';
+  query('#stat-total-label').textContent = config.axisMode === 'fields' ? config.aggregate === 'sum' ? '字段SKU统计合计' : '字段统计次数' : config.aggregate === 'count' ? '记录总数' : '统计结果合计';
+  query('#stat-total-note').textContent = config.axisMode === 'fields' ? config.aggregate === 'sum' ? '各字段独立累加，同一SKU可参与多个字段' : '每个字段仅统计非空记录' : config.aggregate === 'count' ? '当前分类范围内的记录' : '图表各统计值之和';
   query('#record-note').textContent = `${matrix.categories.length} 个分类 · ${matrix.series.length} 个分组`;
   if (dataError) {
     const selecting = dataError === '请至少选择一个横轴字段';
@@ -193,7 +200,7 @@ function newSource(tableId: string): Source {
     const match = table?.fields.find(f => f.name === selected.name);
     return match ? [{ id: match.id, name: match.name }] : [];
   });
-  return { tableId, category: table?.fields[0]?.id ?? '', series: table?.fields[1]?.id ?? table?.fields[0]?.id ?? '', metric: table?.fields.find(f => f.numeric)?.id ?? '', axisFields };
+  return { tableId, category: table?.fields[0]?.id ?? '', series: table?.fields[1]?.id ?? table?.fields[0]?.id ?? '', metric: config.axisMode === 'fields' && config.aggregate === 'sum' ? suggestedSkuField(tableId) : table?.fields.find(f => f.numeric)?.id ?? '', axisFields };
 }
 root.addEventListener('input', event => {
   const target = event.target as HTMLInputElement;
@@ -235,6 +242,9 @@ root.addEventListener('change', event => {
   } else if (target.tagName === 'SELECT') {
     (config as unknown as Record<string, unknown>)[key] = key === 'decimals' ? Number(target.value) : target.value;
     if (key === 'axisMode' && config.axisMode === 'fields') { config.aggregate = 'count'; config.grouped = true; config.categorySort = 'original'; config.filter = ''; }
+    if (key === 'aggregate' && config.axisMode === 'fields' && config.aggregate === 'sum') {
+      config.sources.forEach(source => { source.metric = suggestedSkuField(source.tableId); });
+    }
   } else return;
   renderPanel(); changed();
 });

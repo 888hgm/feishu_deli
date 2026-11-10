@@ -111,7 +111,8 @@ export function validateConfig(config: Config, tables: Table[]): string | null {
       if (selected.some(f => !table.fields.some(meta => meta.id === f.id))) return '横轴字段不可用，请重新选择';
       if (new Set(selected.map(f => f.id)).size !== selected.length) return '横轴字段不能重复';
       if (new Set(selected.map(f => f.name)).size !== selected.length) return '同一数据源的横轴字段名称不能重复';
-      if (config.aggregate !== 'count') return '按字段值分段时使用统计记录总数';
+      if (!['count', 'sum'].includes(config.aggregate)) return '多字段模式支持统计记录总数和 SKU 数量求和';
+      if (config.aggregate === 'sum' && !table.fields.some(field => field.id === source.metric && field.numeric)) return '请选择可统计的 SKU 数量数字字段';
       continue;
     }
     if (!table.fields.some(f => f.id === source.category)) return '请选择横轴分类字段';
@@ -136,7 +137,7 @@ export function hydrateConfig(value: unknown): Config {
   config.filterLogic = raw.filterLogic === 'any' ? 'any' : 'all';
   config.detailHiddenFields = Array.isArray(raw.detailHiddenFields) ? [...new Set(raw.detailHiddenFields.filter(key => typeof key === 'string'))] : [];
   config.detailViews = Array.isArray(raw.detailViews) ? raw.detailViews.filter(item => item && typeof item.tableId === 'string' && typeof item.viewId === 'string').map(({ tableId, viewId }) => ({ tableId, viewId })) : [];
-  if (config.axisMode === 'fields') { config.aggregate = 'count'; config.grouped = true; config.filter = ''; }
+  if (config.axisMode === 'fields') { config.aggregate = raw.aggregate === 'sum' ? 'sum' : 'count'; config.grouped = true; config.filter = ''; }
   config.decimals = Math.max(0, Math.min(2, Number(config.decimals) || 0));
   config.barWidth = Math.max(16, Math.min(96, Number(config.barWidth) || 54));
   return config;

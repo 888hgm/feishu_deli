@@ -45,7 +45,7 @@ export function conditions(config: Config): IDataCondition[] {
     dataRange: { type: SourceType.ALL },
     groups: dashboardAnchorFields(source).map(field => ({ fieldId: field.id, mode: GroupMode.INTEGRATED,
       sort: { sortType: DATA_SOURCE_SORT_TYPE.VIEW } })),
-    series: 'COUNTA',
+    series: config.aggregate === 'sum' ? [{ fieldId: source.metric, rollup: Rollup.SUM }] : 'COUNTA',
   }));
   return (config.multi ? config.sources : config.sources.slice(0, 1)).map(source => ({
     tableId: source.tableId,
